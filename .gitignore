@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+modelos/
+dados/
+saida/
+*.wav
+*.mp4
+.uploads/
