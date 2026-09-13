@@ -168,6 +168,16 @@ cada alteração.
 | `test_pipeline.py` | Validações antes de começar a transcrever |
 | `test_web.py` | Contrato entre a API e o formulário da página |
 
+### O teste do container
+
+`scripts/teste-container.sh` cobre o que o `pytest` não alcança: a imagem, os
+volumes, as permissões dos arquivos gerados e a interface web respondendo de
+verdade por HTTP. É lento, exige Docker e rede, e por isso vive fora da suíte — o
+lugar dele é depois de mexer no `Dockerfile`, no compose ou nas dependências. Ele
+se isola numa pasta, num volume e numa porta próprios, então não atrapalha um
+container já rodando. O uso está em
+[`docs/docker.md`, seção 11](docker.md#11-teste-automatizado).
+
 O `test_web.py` merece destaque: ele lê o HTML da interface e confere que todo campo
 enviado pelo formulário existe como parâmetro do endpoint, e que toda propriedade
 lida pelo JavaScript existe no payload da API. É o teste que pega quebras de

@@ -106,7 +106,8 @@ não corrompe o arquivo, e ele ainda preserva os nomes das trilhas.
 ## Desenvolvimento
 
 ```bash
-.venv/bin/python -m pytest tests -q
+.venv/bin/python -m pytest tests -q     # rápido, sem Docker nem rede
+scripts/teste-container.sh              # a imagem inteira, de ponta a ponta
 ```
 
 O `pytest` já vem no `requirements.txt`. Os testes não precisam de modelos nem de

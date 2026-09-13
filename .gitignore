@@ -6,6 +6,7 @@ modelos/
 dados/
 midia/
 saida/
+.teste-container/
 *.wav
 *.mp4
 .uploads/

@@ -18,7 +18,8 @@ Para a arquitetura interna, [`docs/arquitetura.md`](arquitetura.md).
 8. [Modelos de fala](#8-modelos-de-fala)
 9. [Sem o compose](#9-sem-o-compose)
 10. [Atualizar a imagem](#10-atualizar-a-imagem)
-11. [Quando dá errado](#11-quando-dá-errado)
+11. [Teste automatizado](#11-teste-automatizado)
+12. [Quando dá errado](#12-quando-dá-errado)
 
 ---
 
@@ -309,7 +310,51 @@ O volume de modelos não é afetado por nenhuma reconstrução.
 
 ---
 
-## 11. Quando dá errado
+## 11. Teste automatizado
+
+Um script exercita a imagem inteira e diz, em uma tela, se o container está
+cumprindo o contrato:
+
+```bash
+scripts/teste-container.sh
+```
+
+Ele constrói a imagem, gera um vídeo de teste com duas faixas usando o ffmpeg da
+própria imagem e verifica, entre outras coisas:
+
+- que o `docker-compose.yml` é válido e as variáveis resolvem;
+- que o entrypoint é o `transcritor` e o cache aponta para `/modelos`;
+- que `/midia` está montado somente para leitura;
+- que uma transcrição completa gera os arquivos **no host**, com o dono certo;
+- que os modelos ficam no volume entre execuções;
+- que a interface web sobe, fica `healthy`, aceita um envio, conclui a
+  transcrição, oferece o download e recusa um caminho para fora da pasta do
+  trabalho.
+
+**Ele não encosta no seu ambiente.** Usa uma pasta própria (`.teste-container/`,
+ignorada pelo Git), um volume só dele e a primeira porta livre a partir da 8099 —
+pode rodar com o `docker compose up` no ar e com material seu em `midia/`.
+
+| Opção | Para quê |
+|---|---|
+| `--sem-build` | Reaproveita a imagem já construída. Útil ao repetir o teste. |
+| `--limpar` | Apaga também o volume de modelos do teste ao final. |
+| `-h` | Mostra o resumo de uso. |
+
+As variáveis `IMAGEM`, `VOLUME` e `MODELO` trocam, respectivamente, a imagem
+testada, o volume de modelos e o modelo de fala usado na transcrição.
+
+A primeira execução baixa cerca de 44 MB de modelos; as seguintes reaproveitam o
+volume. O script sai com código diferente de zero se qualquer verificação falhar,
+então serve como porta de entrada para uma integração contínua.
+
+> Os testes de unidade (`pytest`) continuam sendo os rápidos, que rodam a cada
+> alteração e não precisam de Docker. Este aqui é o teste lento, para quando o
+> `Dockerfile`, o compose ou as dependências mudarem.
+
+---
+
+## 12. Quando dá errado
 
 ### Permissão negada nos arquivos gerados
 

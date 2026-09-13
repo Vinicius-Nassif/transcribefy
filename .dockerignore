@@ -17,6 +17,8 @@ README.md
 dados/
 saida/
 midia/
+.teste-container/
+scripts/
 modelos/
 .uploads/
 *.wav
