@@ -10,7 +10,9 @@ set -euo pipefail
 
 IMAGEM="${IMAGEM:-transcribefy:local}"
 VOLUME="${VOLUME:-transcribefy-teste-modelos}"
-MODELO="${MODELO:-pt-pequeno}"
+# O menor modelo do catálogo: o teste é de imagem, volume e permissões, não de
+# qualidade de transcrição — baixar os 3 GB do padrão aqui não provaria mais nada.
+MODELO="${MODELO:-vosk-pt}"
 CONTAINER="transcribefy-teste-$$"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TRABALHO="$RAIZ/.teste-container"

@@ -20,6 +20,9 @@ WORKDIR /app
 # As dependências mudam muito menos que o código: instalá-las numa camada
 # própria faz cada alteração nos módulos reaproveitar o cache do Docker.
 # O requirements.txt tem as versões fixas, então a imagem é reproduzível.
+# Só o requirements.txt: a imagem roda em CPU, e as bibliotecas CUDA do
+# requirements-gpu.txt pesam 1,4 GB sem servir para nada aqui dentro. Numa
+# máquina com GPU, transcrever fora do container é bem mais rápido.
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
@@ -29,7 +32,7 @@ RUN pip install -e . --no-deps
 
 # Pontos de montagem. Criados aqui para a aplicação funcionar mesmo quando o
 # container sobe sem nenhum volume.
-#   /modelos    cache dos modelos Vosk (1,6 GB no pt-grande — sempre um volume)
+#   /modelos    cache dos modelos de fala (3 GB no 'preciso' — sempre um volume)
 #   /midia      vídeos de entrada, montados somente para leitura
 #   /app/dados  trabalhos enviados pela interface web
 #   /app/saida  transcrições geradas pela CLI

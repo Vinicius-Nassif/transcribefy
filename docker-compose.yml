@@ -17,8 +17,8 @@ services:
     # imagem, que é o mesmo UID 1000 da maioria das instalações Linux e do WSL.
     user: "${TRANSCRIBEFY_UID:-1000}:${TRANSCRIBEFY_GID:-1000}"
     volumes:
-      # Cache dos modelos Vosk. Volume nomeado: sobrevive a `down` e a
-      # reconstruções da imagem, evitando rebaixar 1,6 GB a cada vez.
+      # Cache dos modelos de fala. Volume nomeado: sobrevive a `down` e a
+      # reconstruções da imagem, evitando rebaixar vários GB a cada vez.
       - modelos:/modelos
       # Vídeos de entrada, somente leitura — a aplicação nunca escreve neles.
       - ${TRANSCRIBEFY_MIDIA:-./midia}:/midia:ro
