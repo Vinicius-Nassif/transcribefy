@@ -1,10 +1,16 @@
-"""Mesclagem cronológica das falas das duas faixas."""
+"""Mesclagem cronológica das falas das duas faixas.
+
+As faixas são gravadas em paralelo, então elas se sobrepõem no tempo o tempo
+todo: numa mesa animada as pessoas se interrompem, respondem por cima e falam
+juntas. **Nada aqui descarta uma fala por se sobrepor a outra** — as duas entram
+na linha do tempo, ordenadas pelo início. `sobrepostas` diz quais são essas.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
-from .transcricao import Fala
+from .fala import Fala
 
 # Falas seguidas do mesmo locutor separadas por menos que isto viram um parágrafo só.
 PAUSA_MAXIMA = 2.0
@@ -17,6 +23,15 @@ def mesclar(
     pausa_maxima: float = PAUSA_MAXIMA,
 ) -> list[Fala]:
     """Une falas de várias faixas em uma única linha do tempo.
+
+    Toda fala recebida sai na lista devolvida: o `juntar` funde falas seguidas
+    **do mesmo locutor e da mesma faixa**, concatenando o texto, e nunca elimina
+    uma fala por ela coincidir no tempo com a de outra pessoa.
+
+    A fusão só olha a fala imediatamente anterior na linha do tempo, então uma
+    interrupção corta o parágrafo em vez de ser engolida por ele: quem foi
+    interrompido recomeça num bloco novo, e a interrupção continua visível entre
+    os dois.
 
     Args:
         grupos: listas de falas, uma por faixa.
@@ -54,3 +69,27 @@ def mesclar(
         else:
             unidas.append(fala)
     return unidas
+
+
+def sobrepostas(falas: Sequence[Fala]) -> list[bool]:
+    """Diz, para cada fala, se ela divide o tempo com alguma outra.
+
+    A lista de saída é ordenada pelo início de cada fala e não mostra onde cada
+    uma termina, então uma interjeição no meio de um monólogo parece vir depois
+    dele. Este marcador é o que permite a quem lê — ou a um pós-processamento —
+    reconhecer que as duas aconteceram ao mesmo tempo.
+
+    Encostar não é sobrepor: uma fala que começa exatamente quando a outra
+    termina não marca nenhuma das duas.
+    """
+    marcas = [False] * len(falas)
+    ordem = sorted(range(len(falas)), key=lambda i: falas[i].inicio)
+    no_ar: list[int] = []
+    for i in ordem:
+        no_ar = [j for j in no_ar if falas[j].fim > falas[i].inicio]
+        if no_ar:
+            marcas[i] = True
+            for j in no_ar:
+                marcas[j] = True
+        no_ar.append(i)
+    return marcas

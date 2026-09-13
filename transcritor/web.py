@@ -18,7 +18,7 @@ from . import ffmpeg_tools, modelos, pipeline, saida
 RAIZ_TRABALHOS = Path("dados/trabalhos")
 PAGINA = Path(__file__).parent / "web_static" / "index.html"
 
-# Uma transcrição por vez: o Vosk já satura os nucleos disponíveis.
+# Uma transcrição por vez: o modelo de fala já satura a GPU (ou os núcleos).
 _executor = ThreadPoolExecutor(max_workers=1)
 _trava = threading.Lock()
 
@@ -72,12 +72,14 @@ def listar_modelos() -> dict:
         "modelos": [
             {
                 "apelido": m.apelido,
+                "motor": m.motor,
                 "descricao": m.descricao,
                 "tamanho_mb": m.tamanho_mb,
-                "baixado": (cache / m.arquivo).is_dir(),
+                "baixado": modelos.baixado(m, cache),
             }
             for m in modelos.MODELOS_FALA.values()
         ],
+        "modelo_padrao": modelos.PADRAO,
         "formatos": list(saida.FORMATOS),
         "ffmpeg": _ffmpeg_disponivel(),
     }
@@ -93,7 +95,7 @@ def _ffmpeg_disponivel() -> str | None:
 @app.post("/api/trabalhos")
 async def criar_trabalho(
     video: UploadFile,
-    modelo: str = Form("pt-pequeno"),
+    modelo: str = Form(modelos.PADRAO),
     faixa_gm: int = Form(1),
     faixa_grupo: int = Form(2),
     nome_gm: str = Form("GM"),
@@ -102,6 +104,7 @@ async def criar_trabalho(
     formatos: str = Form(",".join(saida.FORMATOS)),
     idioma: str = Form("pt"),
     traduzir: str = Form(""),
+    contexto: str = Form(""),
     deslocamento: float = Form(0.0),
     inicio: float = Form(0.0),
     fim: str = Form(""),
@@ -146,6 +149,7 @@ async def criar_trabalho(
         formatos=[f.strip() for f in formatos.split(",") if f.strip()],
         idioma=idioma,
         traduzir_para=traduzir.strip() or None,
+        contexto=contexto,
         deslocamento_grupo=deslocamento,
         inicio=inicio,
         fim=float(fim) if fim.strip() else None,

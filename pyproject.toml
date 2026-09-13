@@ -5,6 +5,7 @@ description = "Transcricao mesclada de videos OBS com 2 faixas de audio, com sep
 requires-python = ">=3.12"
 dependencies = [
     "pytranscript>=0.3.0",
+    "faster-whisper>=1.1",
     "vosk>=0.3.45",
     "numpy>=1.26",
     "scipy>=1.11",
@@ -14,6 +15,14 @@ dependencies = [
     "python-multipart>=0.0.9",
     "requests>=2.31",
     "tqdm>=4.66",
+]
+
+# Bibliotecas CUDA para o Whisper na GPU. Sem elas tudo funciona em CPU.
+[project.optional-dependencies]
+gpu = [
+    "nvidia-cublas-cu12>=12.3",
+    "nvidia-cuda-nvrtc-cu12>=12.3",
+    "nvidia-cudnn-cu12>=9,<10",
 ]
 
 [project.scripts]

@@ -13,7 +13,7 @@ import numpy as np
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 
-from .transcricao import Fala
+from .fala import Fala
 
 # Falas muito curtas geram vetores instáveis: elas não entram no agrupamento,
 # mas depois são atribuídas ao locutor mais próximo.

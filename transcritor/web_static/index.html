@@ -28,10 +28,10 @@
   .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
   label { display: block; font-size: .8rem; font-weight: 600; color: var(--suave);
     text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
-  input, select { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
+  input, select, textarea { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
     border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); }
   input[type=file] { padding: 8px; cursor: pointer; }
-  input:focus, select:focus { outline: 2px solid var(--destaque); outline-offset: -1px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--destaque); outline-offset: -1px; }
   .dica { font-size: .78rem; color: var(--suave); margin-top: 4px; font-weight: 400;
     text-transform: none; letter-spacing: 0; }
   button { background: var(--destaque); color: #fff; border: 0; border-radius: 8px;
@@ -116,6 +116,17 @@
       <div class="dica">Na ordem em que falam pela primeira vez. Em branco vira “Jogador 1…5”.</div>
     </div>
 
+    <div style="margin-top:14px">
+      <label for="contexto">Contexto da mesa (opcional)</label>
+      <textarea id="contexto" name="contexto" rows="2"
+        placeholder="Campanha de Ravenloft. Strahd von Zarovich, Barovia, Ireena. Termos: iniciativa, teste de resistência."></textarea>
+      <div class="dica">
+        Nomes próprios, lugares e jargão que aparecem na sessão. É onde o
+        reconhecimento mais erra — citá-los aqui corrige a maioria. Os nomes do
+        GM e dos jogadores já entram sozinhos.
+      </div>
+    </div>
+
     <div class="grade" style="margin-top:14px">
       <div>
         <label for="idioma">Idioma do áudio</label>
@@ -161,7 +172,7 @@ function tempo(segundos) {
 async function carregarOpcoes() {
   const dados = await (await fetch("/api/modelos")).json();
   $("modelo").innerHTML = dados.modelos.map((m) =>
-    `<option value="${m.apelido}"${m.apelido === "pt-pequeno" ? " selected" : ""}>` +
+    `<option value="${m.apelido}"${m.apelido === dados.modelo_padrao ? " selected" : ""}>` +
     `${m.apelido} — ${m.descricao}${m.baixado ? "" : ` (baixa ~${m.tamanho_mb} MB na 1ª vez)`}</option>`
   ).join("");
   if (!dados.ffmpeg) {

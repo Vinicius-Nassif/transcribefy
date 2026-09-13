@@ -7,12 +7,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import diarizacao, ffmpeg_tools, mesclagem, modelos, saida, transcricao
-from .transcricao import Fala
+from . import diarizacao, ffmpeg_tools, mesclagem, modelos, saida, transcricao, vozes
+from .fala import Fala
 
-# Peso de cada etapa no progresso total: as duas transcrições dominam o tempo.
-# Os 5% restantes ficam para a diarização, a mesclagem e a escrita dos arquivos.
-_ETAPAS = {"extracao": 0.05, "faixa_gm": 0.30, "faixa_grupo": 0.60}
+# Peso de cada etapa no progresso total: as duas transcrições dominam o tempo, e
+# a extração dos vetores de voz roda só na faixa dos jogadores. Os 5% restantes
+# ficam para a diarização, a mesclagem e a escrita dos arquivos.
+_ETAPAS = {"extracao": 0.04, "faixa_gm": 0.24, "faixa_grupo": 0.48, "vozes": 0.19}
 
 Relato = Callable[[str, float], None]
 
@@ -23,7 +24,7 @@ class Configuracao:
 
     video: Path
     destino: Path
-    modelo_fala: str = "pt-pequeno"
+    modelo_fala: str = modelos.PADRAO
     faixa_gm: int = 0
     faixa_grupo: int = 1
     nome_gm: str = "GM"
@@ -33,6 +34,8 @@ class Configuracao:
     formatos: Sequence[str] = saida.FORMATOS
     idioma: str = "pt"
     traduzir_para: str | None = None
+    contexto: str = ""
+    dispositivo: str = "auto"
     deslocamento_grupo: float = 0.0
     inicio: float = 0.0
     fim: float | None = None
@@ -54,6 +57,23 @@ def inspecionar(video: Path) -> list[ffmpeg_tools.FaixaAudio]:
     return ffmpeg_tools.listar_faixas_audio(Path(video))
 
 
+def contexto_da_mesa(config: Configuracao) -> str:
+    """Monta a dica de contexto que o Whisper recebe antes de transcrever.
+
+    Os nomes da mesa entram junto com o texto livre porque é neles que um
+    reconhecedor mais erra: sem a dica, um nome próprio vira a palavra comum
+    mais parecida. A dica é um prompt, não uma regra — ela enviesa, não obriga.
+    """
+    partes = []
+    nomes = [config.nome_gm, *config.nomes_jogadores]
+    presentes = ", ".join(n for n in nomes if n.strip())
+    if presentes:
+        partes.append(f"Participantes: {presentes}.")
+    if config.contexto.strip():
+        partes.append(config.contexto.strip())
+    return " ".join(partes)
+
+
 def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
     """Roda a transcrição completa e escreve os arquivos de saída."""
     video = Path(config.video)
@@ -69,10 +89,16 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
     _validar_faixas(faixas, config)
 
     aviso("Preparando os modelos", 0.01)
-    caminho_fala = modelos.resolver_modelo_fala(
-        config.modelo_fala, config.diretorio_modelos
-    )
+    modelo = modelos.resolver_modelo_fala(config.modelo_fala, config.diretorio_modelos)
     caminho_locutor = modelos.resolver_modelo_locutor(config.diretorio_modelos)
+    # A extração de vetores de voz roda no Vosk mesmo quando o texto vem do
+    # Whisper; o modelo compacto basta para alimentar o reconhecedor.
+    modelo_vosk = (
+        modelo
+        if modelo.motor == modelos.MOTOR_VOSK
+        else modelos.resolver_modelo_fala("vosk-pt", config.diretorio_modelos)
+    )
+    contexto = contexto_da_mesa(config)
 
     concluido = 0.0
     with tempfile.TemporaryDirectory(prefix="transcritor-") as tmp:
@@ -89,14 +115,15 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
         )
         concluido += _ETAPAS["extracao"]
 
-        # Faixa do GM: locutor único, logo não há por que calcular x-vectors.
+        # Faixa do GM: locutor único, logo não há por que calcular vetores de voz.
         base = concluido
         aviso(f"Transcrevendo a faixa do {config.nome_gm}", base)
         falas_gm = transcricao.transcrever(
-            wav_gm,
-            caminho_fala,
-            modelo_locutor=None,
+            wav_gm, modelo,
             faixa=config.faixa_gm,
+            idioma=config.idioma,
+            contexto=contexto,
+            dispositivo=config.dispositivo,
             progresso=lambda f: aviso(
                 f"Transcrevendo a faixa do {config.nome_gm}",
                 base + f * _ETAPAS["faixa_gm"],
@@ -106,20 +133,35 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
             fala.locutor = config.nome_gm
         concluido = base + _ETAPAS["faixa_gm"]
 
-        # Faixa do grupo: várias vozes, precisa dos x-vectors para a diarização.
+        # Faixa do grupo: várias vozes. O motor Vosk já devolve os vetores na
+        # mesma passada; com o Whisper eles vêm depois, trecho a trecho.
         base = concluido
         aviso("Transcrevendo a faixa dos jogadores", base)
         falas_grupo = transcricao.transcrever(
-            wav_grupo,
-            caminho_fala,
-            modelo_locutor=caminho_locutor,
+            wav_grupo, modelo,
             faixa=config.faixa_grupo,
+            idioma=config.idioma,
+            contexto=contexto,
+            dispositivo=config.dispositivo,
+            modelo_locutor=caminho_locutor,
             progresso=lambda f: aviso(
                 "Transcrevendo a faixa dos jogadores",
                 base + f * _ETAPAS["faixa_grupo"],
             ),
         )
         concluido = base + _ETAPAS["faixa_grupo"]
+
+        if not any(f.vetor_voz for f in falas_grupo):
+            base = concluido
+            aviso("Analisando as vozes dos jogadores", base)
+            vozes.anexar_vetores(
+                wav_grupo, falas_grupo, modelo_vosk.caminho, caminho_locutor,
+                progresso=lambda f: aviso(
+                    "Analisando as vozes dos jogadores",
+                    base + f * _ETAPAS["vozes"],
+                ),
+            )
+        concluido += _ETAPAS["vozes"]
 
     aviso("Separando os locutores pela voz", concluido)
     diarizacao.atribuir_locutores(

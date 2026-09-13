@@ -39,3 +39,21 @@ def test_aceita_a_configuracao_padrao():
 def test_video_inexistente():
     with pytest.raises(FileNotFoundError):
         pipeline.executar(config())
+
+
+def test_o_contexto_comeca_pelos_nomes_da_mesa():
+    montado = pipeline.contexto_da_mesa(
+        config(nome_gm="Vini", nomes_jogadores=["Ana", "Bruno"])
+    )
+    assert montado == "Participantes: Vini, Ana, Bruno."
+
+
+def test_o_contexto_livre_entra_depois_dos_nomes():
+    montado = pipeline.contexto_da_mesa(
+        config(nome_gm="Vini", nomes_jogadores=["Ana"], contexto="Barovia, Strahd.")
+    )
+    assert montado == "Participantes: Vini, Ana. Barovia, Strahd."
+
+
+def test_sem_nomes_nem_texto_o_contexto_fica_vazio():
+    assert pipeline.contexto_da_mesa(config(nome_gm=" ")) == ""

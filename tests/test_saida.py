@@ -23,9 +23,24 @@ def test_srt_usa_o_tempo_final_real_da_fala():
     assert "00:00:12,000 --> 00:00:30,000" in blocos
 
 
-def test_srt_nao_invade_a_legenda_seguinte():
+def test_srt_mantem_a_fala_interrompida_inteira():
+    """Cortar a legenda do GM quando alguém o interrompe apagaria a interrupção."""
     falas = [Fala(0.0, 12.0, "a", 0, "GM"), Fala(5.0, 9.0, "b", 1, "Ana")]
-    assert "00:00:00,000 --> 00:00:05,000" in saida.construir_transcript(falas).to_srt()
+    srt = saida.construir_transcript(falas).to_srt()
+    assert "00:00:00,000 --> 00:00:12,000" in srt
+    assert "00:00:05,000 --> 00:00:09,000" in srt
+
+
+def test_srt_traz_as_duas_falas_simultaneas():
+    falas = [Fala(0.0, 12.0, "a", 0, "GM"), Fala(5.0, 9.0, "b", 1, "Ana")]
+    srt = saida.construir_transcript(falas).to_srt()
+    assert "GM: a" in srt and "Ana: b" in srt
+
+
+def test_uma_resposta_de_uma_palavra_fica_tempo_suficiente_na_tela():
+    falas = [Fala(3.0, 3.05, "sim", 1, "Ana")]
+    srt = saida.construir_transcript(falas).to_srt()
+    assert f"00:00:03,000 --> 00:00:03,{int(saida.DURACAO_MINIMA_LEGENDA * 1000):03d}" in srt
 
 
 def test_cada_linha_leva_o_nome_do_locutor():
@@ -52,7 +67,8 @@ def test_json_detalhado_preserva_faixa_e_tempo_final():
     assert dados["total_falas"] == 3
     assert dados["duracao"] == 30.0
     assert dados["falas"][1] == {
-        "inicio": 6.0, "fim": 9.5, "faixa": 2, "locutor": "Ana", "texto": "eu abro",
+        "inicio": 6.0, "fim": 9.5, "faixa": 2, "locutor": "Ana",
+        "sobreposta": False, "texto": "eu abro",
     }
 
 
@@ -97,3 +113,50 @@ def test_traducao_reinsere_as_linhas_que_falharam(monkeypatch, tmp_path):
 def test_formato_desconhecido_e_recusado(tmp_path):
     with pytest.raises(ValueError):
         saida.escrever(FALAS, tmp_path / "s", formatos=["docx"])
+
+
+def test_json_detalhado_marca_quem_falou_ao_mesmo_tempo():
+    falas = [
+        Fala(0.0, 12.0, "monólogo", 0, "GM"),
+        Fala(5.0, 6.0, "peraí", 1, "Ana"),
+        Fala(20.0, 22.0, "tá", 1, "Bruno"),
+    ]
+    dados = json.loads(saida.para_json_detalhado(falas))
+    assert [f["sobreposta"] for f in dados["falas"]] == [True, True, False]
+    assert dados["total_sobrepostas"] == 2
+
+
+def test_nenhuma_fala_simultanea_some_dos_arquivos(tmp_path):
+    """A garantia que importa: o que entra no `escrever` sai em todo formato."""
+    falas = [
+        Fala(0.0, 12.0, "monólogo do mestre", 0, "GM"),
+        Fala(4.0, 5.0, "peraí", 1, "Ana"),
+        Fala(4.5, 5.5, "deixa eu ver", 1, "Bruno"),
+    ]
+    saida.escrever(falas, tmp_path / "s", formatos=saida.FORMATOS)
+
+    for sufixo in ("md", "txt", "csv", "srt", "vtt"):
+        conteudo = (tmp_path / f"s.{sufixo}").read_text(encoding="utf-8")
+        for fala in falas:
+            assert fala.texto in conteudo, f"{fala.texto!r} sumiu do .{sufixo}"
+
+    # Os JSON escapam os acentos, então a checagem é sobre o conteúdo, não o texto bruto.
+    simples = json.loads((tmp_path / "s.json").read_text(encoding="utf-8"))
+    detalhado = json.loads((tmp_path / "s.detalhado.json").read_text(encoding="utf-8"))
+    for fala in falas:
+        assert any(fala.texto in linha for linha in simples["text"]), fala.texto
+    assert [f["texto"] for f in detalhado["falas"]] == [f.texto for f in falas]
+
+
+def test_arquivos_saem_em_utf8_mesmo_com_caracteres_fora_da_cp1252(tmp_path):
+    """Travessão e reticências o Whisper produz; a codificação padrão do Windows não aceita."""
+    falas = [Fala(0.0, 2.0, "ele hesita — e então… abre a porta", 0, "GM")]
+    saida.escrever(falas, tmp_path / "s", formatos=["txt", "srt", "vtt", "csv", "md"])
+    for sufixo in ("txt", "srt", "vtt", "csv", "md"):
+        conteudo = (tmp_path / f"s.{sufixo}").read_bytes().decode("utf-8")
+        assert "— e então…" in conteudo, sufixo
+
+
+def test_formato_desconhecido_continua_recusado_com_a_gravacao_propria(tmp_path):
+    with pytest.raises(ValueError, match="Formato desconhecido"):
+        saida._gravar(saida.construir_transcript(FALAS), tmp_path / "s.docx")

@@ -39,7 +39,8 @@ def test_a_pagina_envia_todos_os_campos_do_formulario():
     import inspect
 
     enviados = set(
-        re.findall(r'<(?:input|select)\b[^>]*?name="([a-z_]+)"', PAGINA)
+        re.findall(r'<(?:input|select|textarea)\b[^>]*?name="([a-z_]+)"', PAGINA)
     )
     aceitos = set(inspect.signature(web.criar_trabalho).parameters)
     assert enviados <= aceitos, enviados - aceitos
+

@@ -1,0 +1,11 @@
+# Bibliotecas CUDA para rodar o Whisper na GPU NVIDIA (opcional, ~1,4 GB).
+#   pip install -r requirements.txt -r requirements-gpu.txt
+#
+# Sao as mesmas que o CTranslate2 procura em tempo de execucao; o
+# transcritor.motor_whisper as carrega direto do venv, sem exigir
+# LD_LIBRARY_PATH. Sem elas o programa roda igual, so que em CPU.
+#
+# O driver NVIDIA continua vindo do sistema (no WSL, do driver do Windows).
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cudnn-cu12==9.26.0.51

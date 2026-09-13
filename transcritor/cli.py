@@ -24,6 +24,7 @@ def _parser() -> argparse.ArgumentParser:
             "  transcritor faixas sessao.mp4\n"
             "  transcritor transcrever sessao.mp4 -o saida/sessao-01\n"
             "  transcritor transcrever sessao.mp4 --nomes Ana,Bruno,Caio,Duda,Edu\n"
+            "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
         ),
     )
@@ -32,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     faixas = sub.add_parser("faixas", help="lista as faixas de áudio de um arquivo")
     faixas.add_argument("video", type=Path)
 
-    lista = sub.add_parser("modelos", help="lista e baixa os modelos Vosk")
+    lista = sub.add_parser("modelos", help="lista e baixa os modelos de fala")
     lista.add_argument(
         "--baixar", metavar="APELIDO", help="baixa um modelo de fala antecipadamente"
     )
@@ -48,7 +49,7 @@ def _parser() -> argparse.ArgumentParser:
         help="caminho de saída sem extensão (padrão: ./saida/<nome-do-video>)",
     )
     t.add_argument(
-        "-m", "--modelo", default="pt-pequeno",
+        "-m", "--modelo", default=modelos.PADRAO,
         help=f"modelo de fala: {', '.join(modelos.MODELOS_FALA)} ou um caminho",
     )
     t.add_argument("--faixa-gm", type=int, default=1, help="número da faixa do GM (1-based)")
@@ -68,7 +69,21 @@ def _parser() -> argparse.ArgumentParser:
         "-f", "--formatos", default=",".join(saida.FORMATOS),
         help=f"formatos de saída ({', '.join(saida.FORMATOS)})",
     )
-    t.add_argument("--idioma", default="pt", help="idioma do áudio (usado na tradução)")
+    t.add_argument(
+        "--idioma", default="pt",
+        help="idioma do áudio ('auto' detecta); também define o alvo da tradução",
+    )
+    t.add_argument(
+        "--contexto", default="",
+        help=(
+            "nomes de personagens, lugares e jargão da mesa, em texto corrido. "
+            "Reduz muito o erro em nomes próprios (só vale para os modelos Whisper)"
+        ),
+    )
+    t.add_argument(
+        "--dispositivo", default="auto", choices=("auto", "cuda", "cpu"),
+        help="onde rodar o Whisper; 'auto' usa a GPU quando houver",
+    )
     t.add_argument(
         "--traduzir", default=None, metavar="IDIOMA",
         help="também gera a transcrição traduzida (ex.: en, es)",
@@ -107,18 +122,26 @@ def _cmd_faixas(args) -> int:
 
 def _cmd_modelos(args) -> int:
     if args.baixar:
-        caminho = modelos.resolver_modelo_fala(args.baixar)
+        pronto = modelos.resolver_modelo_fala(args.baixar)
         modelos.resolver_modelo_locutor()
-        print(f"Modelo pronto em {caminho}")
+        print(f"Modelo '{pronto.apelido}' ({pronto.motor}) pronto em {pronto.caminho}")
         return 0
-    print(f"Cache: {modelos.diretorio_padrao()}\n")
+    cache = modelos.diretorio_padrao()
+    print(f"Cache: {cache}\n")
     print("Modelos de fala:")
     for modelo in modelos.MODELOS_FALA.values():
-        marca = "*" if (modelos.diretorio_padrao() / modelo.arquivo).is_dir() else " "
-        print(f" {marca} {modelo.apelido:<12} ~{modelo.tamanho_mb:>5} MB  {modelo.descricao}")
+        marca = "*" if modelos.baixado(modelo, cache) else " "
+        padrao = " (padrão)" if modelo.apelido == modelos.PADRAO else ""
+        print(
+            f" {marca} {modelo.apelido:<15} ~{modelo.tamanho_mb:>5} MB  "
+            f"{modelo.descricao}{padrao}"
+        )
     spk = modelos.MODELO_LOCUTOR
-    marca = "*" if (modelos.diretorio_padrao() / spk.arquivo).is_dir() else " "
-    print(f"\nModelo de locutor:\n {marca} {spk.apelido:<12} ~{spk.tamanho_mb:>5} MB  {spk.descricao}")
+    marca = "*" if modelos.baixado(spk, cache) else " "
+    print(
+        f"\nModelo de locutor (sempre usado, separa as vozes dos jogadores):\n"
+        f" {marca} {spk.apelido:<15} ~{spk.tamanho_mb:>5} MB  {spk.descricao}"
+    )
     print("\n(* = já baixado)")
     return 0
 
@@ -150,6 +173,8 @@ def _cmd_transcrever(args) -> int:
         formatos=[f.strip() for f in args.formatos.split(",") if f.strip()],
         idioma=args.idioma,
         traduzir_para=args.traduzir,
+        contexto=args.contexto,
+        dispositivo=args.dispositivo,
         deslocamento_grupo=args.deslocamento,
         inicio=args.inicio,
         fim=args.fim,
@@ -180,7 +205,22 @@ def _cmd_transcrever(args) -> int:
     return 0
 
 
+def _saida_em_utf8() -> None:
+    """Garante UTF-8 na saída do terminal, inclusive quando ela é redirecionada.
+
+    No Windows o console já escreve Unicode, mas um `> arquivo.txt` cai para a
+    cp1252 e quebra nos travessões das descrições dos modelos. No Linux isto não
+    muda nada.
+    """
+    for fluxo in (sys.stdout, sys.stderr):
+        try:
+            fluxo.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):  # fluxo capturado ou já fechado
+            continue
+
+
 def main(argv: list[str] | None = None) -> int:
+    _saida_em_utf8()
     args = _parser().parse_args(argv)
     acoes = {
         "faixas": _cmd_faixas,
