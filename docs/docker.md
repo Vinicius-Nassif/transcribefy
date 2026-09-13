@@ -152,7 +152,7 @@ flowchart LR
 | `midia/` | `/midia` | Gravações de entrada. Montada **somente para leitura**: a aplicação nunca escreve nos seus vídeos. |
 | `dados/` | `/app/dados` | Trabalhos enviados pela interface web, um diretório por envio. |
 | `saida/` | `/app/saida` | Transcrições geradas pela CLI. |
-| volume `modelos` | `/modelos` | Cache dos modelos Vosk. |
+| volume `modelos` | `/modelos` | Cache dos modelos de fala (Whisper e Vosk). |
 
 O cache dos modelos é um **volume nomeado**, não uma pasta do projeto: ele sobrevive
 a `docker compose down` e a reconstruções da imagem, o que evita rebaixar até 1,6 GB
@@ -251,11 +251,17 @@ automaticamente, e ele também é ignorado pelo Git.
 
 ## 8. Modelos de fala
 
+> **A imagem roda em CPU.** Ela não inclui as bibliotecas CUDA — seriam 1,4 GB
+> inúteis dentro do container. Numa máquina com GPU NVIDIA, transcrever fora do
+> container é bem mais rápido; veja o
+> [guia de uso, seção 2.3.1](uso.md#231-gpu-nvidia-opcional-mas-vale-muito).
+> Em CPU, o modelo `rapido` costuma ser a melhor troca entre tempo e qualidade.
+
 Os modelos são baixados na primeira vez que são usados, dentro do container, e
 ficam no volume. Para tirar essa espera do caminho da primeira transcrição:
 
 ```bash
-docker compose run --rm transcribefy modelos --baixar pt-grande
+docker compose run --rm transcribefy modelos --baixar rapido
 docker compose run --rm transcribefy modelos          # o que já está em cache
 ```
 

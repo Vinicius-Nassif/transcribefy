@@ -9,7 +9,7 @@ Para instalar e operar, veja o [guia de uso](uso.md).
 ## Princípio de organização
 
 Cada módulo resolve uma etapa e não conhece as outras. Eles se comunicam por uma
-estrutura só, [`Fala`](../transcritor/transcricao.py) — início, fim, texto, faixa,
+estrutura só, [`Fala`](../transcritor/fala.py) — início, fim, texto, faixa,
 locutor e vetor de voz —, que atravessa todo o processo. `pipeline.py` é o único
 lugar que conhece a ordem das etapas; `cli.py` e `web.py` são cascas finas sobre
 ele.
@@ -17,15 +17,33 @@ ele.
 Consequência prática: trocar o motor de reconhecimento, o algoritmo de separação de
 vozes ou o conjunto de formatos de saída afeta um módulo só.
 
+**Falas simultâneas nunca são descartadas.** As duas faixas correm em paralelo e
+se sobrepõem o tempo todo. Nenhuma etapa elimina uma fala por coincidir no tempo
+com a de outra pessoa: `mesclagem.mesclar` só funde falas seguidas **do mesmo
+locutor e da mesma faixa**, e `saida` grava o tempo final real de cada uma — uma
+legenda não é encurtada porque a próxima começa antes de ela terminar.
+`mesclagem.sobrepostas` diz quais falas dividiram o tempo, e é o que alimenta o
+campo `sobreposta` do `.detalhado.json`. Há testes travando isso em
+`test_mesclagem.py` e `test_saida.py`; ao mexer nesses módulos, mantenha-os.
+
+**Texto e voz são etapas separadas.** O motor de reconhecimento entrega só o texto
+com os tempos; quem caracteriza a voz de cada trecho é `vozes.py`, depois. Foi o que
+permitiu trocar o motor padrão sem tocar na separação de locutores — e é por isso
+que os dois motores convivem sem um saber do outro.
+
 ```mermaid
 flowchart TD
   CLI["cli.py"] --> P["pipeline.py"]
   WEB["web.py"] --> P
   P --> FF["ffmpeg_tools.py<br/><i>MP4 → 2 WAV mono 16 kHz</i>"]
   P --> MO["modelos.py<br/><i>baixa e faz cache</i>"]
-  FF --> TR["transcricao.py<br/><i>Vosk → list[Fala]</i>"]
+  FF --> TR["transcricao.py<br/><i>escolhe o motor → list[Fala]</i>"]
   MO --> TR
-  TR --> DI["diarizacao.py<br/><i>x-vectors → locutor</i>"]
+  TR --> MW["motor_whisper.py<br/><i>padrão: texto com contexto</i>"]
+  TR --> MV["motor_vosk.py<br/><i>alternativa leve</i>"]
+  MW --> VZ["vozes.py<br/><i>trecho → x-vector</i>"]
+  MV --> VZ
+  VZ --> DI["diarizacao.py<br/><i>x-vectors → locutor</i>"]
   DI --> ME["mesclagem.py<br/><i>2 faixas → 1 linha do tempo</i>"]
   ME --> SA["saida.py<br/><i>Fala → arquivos</i>"]
 ```
@@ -34,18 +52,41 @@ flowchart TD
 
 | Módulo | Responsabilidade | Importa |
 |---|---|---|
+| `fala.py` | A estrutura `Fala`, trocada entre todos os módulos | nada |
 | `ffmpeg_tools.py` | Localiza o ffmpeg, lê as faixas do container, extrai WAV 16 kHz mono | `imageio_ffmpeg` |
-| `modelos.py` | Baixa e faz cache dos modelos Vosk | `requests`, `tqdm` |
-| `transcricao.py` | Roda o Vosk guardando tempo inicial/final e x-vector por fala | `pytranscript`, `vosk` |
-| `diarizacao.py` | Agrupa os x-vectors em locutores | `transcricao`, `numpy`, `scipy` |
-| `mesclagem.py` | Intercala as faixas numa linha do tempo só | `transcricao` |
-| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `transcricao`, `pytranscript` |
+| `modelos.py` | Catálogo, download e cache dos modelos dos dois motores | `requests`, `tqdm`, `faster_whisper` |
+| `motor_whisper.py` | Reconhecimento com Whisper: texto pontuado e ciente do contexto | `fala`, `faster_whisper` |
+| `motor_vosk.py` | Reconhecimento com Vosk: leve, sem pontuação | `fala`, `vosk` |
+| `transcricao.py` | Escolhe o motor pelo modelo e prepara o WAV | `motor_*`, `modelos`, `pytranscript` |
+| `vozes.py` | Extrai o x-vector de cada trecho, seja qual for o motor | `fala`, `vosk`, `numpy` |
+| `diarizacao.py` | Agrupa os x-vectors em locutores | `fala`, `numpy`, `scipy` |
+| `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
+| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
 | `cli.py` / `web.py` | As duas interfaces | `pipeline`, `ffmpeg_tools`, `modelos`, `saida` |
 
 A dependência anda sempre para cima nesta tabela: nenhum módulo importa outro que
-esteja abaixo dele. `transcricao.py` não importa nada do projeto, e é dele que vem a
-`Fala` usada por todos os seguintes.
+esteja abaixo dele. `fala.py` não importa nada — nem do projeto, nem de fora —, e é
+dele que vem a `Fala` usada por todos os seguintes. Foi separado de `transcricao.py`
+justamente para que os motores pudessem importá-la sem ciclo.
+
+### Os dois motores de reconhecimento
+
+| | `motor_whisper.py` (padrão) | `motor_vosk.py` |
+|---|---|---|
+| Como decide a palavra | Janelas de 30 s, levando em conta o que já transcreveu | n-gramas locais |
+| Pontuação e maiúsculas | Sim | Não |
+| Nomes próprios | Aceita uma dica de contexto que os enviesa | Sem como informar |
+| Hardware | GPU NVIDIA, ou CPU (mais lento) | CPU |
+| Vetores de voz | Não calcula — ficam a cargo de `vozes.py` | Pode devolver na mesma passada |
+
+Os dois expõem a mesma função `transcrever(...) -> list[Fala]` e não se conhecem.
+Quem escolhe é `transcricao.transcrever`, olhando o campo `motor` do modelo que
+`modelos.resolver_modelo_fala` devolveu — a decisão mora no modelo, não em quem
+transcreve.
+
+O Vosk continua sendo dependência mesmo com o Whisper no comando: é dele que sai o
+modelo de x-vectors que `vozes.py` usa para separar as vozes dos jogadores.
 
 ### Onde as dependências são declaradas
 
@@ -57,7 +98,33 @@ esteja abaixo dele. `transcricao.py` não importa nada do projeto, e é dele que
 Os dois andam juntos: ao acrescentar uma biblioteca, declare a faixa no
 `pyproject.toml` e regenere o `requirements.txt` a partir do ambiente
 (`uv pip freeze | grep -v '^-e ' > requirements.txt`). O procedimento de instalação
-está no [guia de uso, seção 2.2](uso.md#22-dependências).
+está no [guia de uso, seção 2.3](uso.md#23-dependências).
+
+### O que é específico de cada sistema
+
+O projeto roda igual no Linux, no macOS e no Windows. Três pontos precisam saber
+em qual deles estão — e são só três:
+
+| Onde | O quê |
+|---|---|
+| `requirements.txt` | O `uvloop` tem marcador de plataforma: não existe wheel dele para Windows, e sem o marcador `pip install -r` falharia inteiro lá. |
+| `motor_whisper._carregar_bibliotecas_cuda` | As bibliotecas CUDA do pip são `.so` em `lib/` no Linux e `.dll` em `bin/` no Windows, com formas de carregar diferentes. |
+| `saida._gravar` e `cli._saida_em_utf8` | A codificação padrão do Windows é cp1252. Os arquivos são gravados em UTF-8 explícito, e a saída do terminal é reconfigurada — senão um travessão interromperia a gravação. |
+
+Dois scripts cobrem o Windows, cada um com um atalho `.cmd` que contorna a
+política de execução do PowerShell:
+
+| Script | O que faz |
+|---|---|
+| `scripts/instalar-windows.ps1` | Ambiente virtual, dependências e, havendo GPU, as bibliotecas CUDA. |
+| `scripts/iniciar-windows.ps1` | Confere o ambiente (instalando se faltar), baixa o modelo em paralelo, sobe o servidor, espera ele responder e abre o navegador. |
+
+Nenhum dos dois duplica regra do projeto: o primeiro chama o mesmo
+`requirements.txt` e o mesmo `requirements-gpu.txt`; o segundo chama o primeiro e
+pergunta ao próprio pacote o que precisa saber (dispositivo, modelos em cache,
+modelo padrão), em vez de repetir esses valores. `tests/test_instalacao.py` trava
+o empacotamento que um `uv pip freeze` distraído desfaria, e `test_web.py` trava
+o campo da API que o `iniciar` usa para saber que a aplicação subiu.
 
 ### A imagem do container
 
@@ -70,7 +137,7 @@ aponta o cache dos modelos para um volume.
 | Caminho no container | Conteúdo |
 |---|---|
 | `/app` | Código, instalado em modo editável. Diretório de trabalho, o que faz `-o saida/...` cair em `/app/saida`. |
-| `/modelos` | Cache dos modelos Vosk, em volume nomeado. |
+| `/modelos` | Cache dos modelos de fala (Whisper e Vosk), em volume nomeado. |
 | `/midia` | Gravações de entrada, somente leitura. |
 | `/app/dados` | `RAIZ_TRABALHOS` do `web.py`, que é relativa ao diretório de trabalho. |
 
@@ -91,14 +158,16 @@ foram estendidos em vez de substituídos:
 
 - **`TranscricaoComLocutores`** (`saida.py`) herda de `pytranscript.Transcript` e
   sobrescreve `srt_generator` para usar o tempo final real de cada fala, no lugar da
-  estimativa fixa de 5 segundos do original. `to_vtt`, `write` e os demais formatos
-  vêm de graça.
+  estimativa fixa de 5 segundos do original — e, diferente dele, não encurta uma
+  legenda porque a seguinte começa antes: é o que preserva as interrupções.
+  `to_vtt`, `write` e os demais formatos vêm de graça.
 - **`_traduzir`** (`saida.py`) reinsere as linhas que `Transcript.translate`
   descartaria em silêncio, preservando o alinhamento dos tempos.
 
-O laço de reconhecimento em `transcricao.py` é próprio, e não o
+O laço de reconhecimento em `motor_vosk.py` é próprio, e não o
 `pytranscript.transcribe`, porque precisamos de dois dados que a função original
-joga fora: o tempo final da fala e o vetor de voz.
+joga fora: o tempo final da fala e o vetor de voz. De `pytranscript` ficam a
+conversão para WAV válido (`transcricao.preparar_wav`) e os formatos de saída.
 
 ---
 
@@ -118,17 +187,36 @@ padrão a partir de `FORMATOS`.
 
 ### Adicionar um modelo de fala
 
-Uma entrada em `modelos.MODELOS_FALA`:
+Uma entrada em `modelos.MODELOS_FALA`, declarando o motor que a acompanha:
 
 ```python
+"medio": Modelo(
+    "medio", MOTOR_WHISPER, "medium",
+    "Whisper medium — meio-termo entre 'leve' e 'preciso'", 1530,
+),
 "es-pequeno": Modelo(
-    "es-pequeno", "vosk-model-small-es-0.42",
+    "es-pequeno", MOTOR_VOSK, "vosk-model-small-es-0.42",
     "Espanhol compacto", 39,
 ),
 ```
 
-O download, a descompactação e o cache já estão resolvidos. O apelido aparece
-sozinho em `transcritor modelos` e no seletor da interface web.
+A `referencia` é o id no Hugging Face para o Whisper e o nome do zip para o Vosk;
+`garantir_modelo` já trata os dois casos. O download e o cache estão resolvidos, e o
+apelido aparece sozinho em `transcritor modelos` e no seletor da interface web.
+
+Para um teste rápido nem isso é necessário: qualquer tamanho conhecido do Whisper
+(`-m medium`, `-m distil-large-v3`) ou o caminho de um modelo já em disco também são
+aceitos — nesse caso o motor é deduzido do conteúdo da pasta.
+
+### Adicionar um motor de reconhecimento
+
+1. Um módulo `motor_<nome>.py` com `transcrever(...) -> list[Fala]`.
+2. Uma constante `MOTOR_<NOME>` e as entradas correspondentes em
+   `modelos.MODELOS_FALA`, mais o tratamento em `modelos.garantir_modelo`.
+3. Um ramo em `transcricao.transcrever`.
+
+Preencher os vetores de voz é opcional: quando o motor não os devolve, o `pipeline`
+chama `vozes.anexar_vetores` e a separação de locutores segue igual.
 
 ### Trocar o algoritmo de separação de vozes
 
@@ -155,18 +243,22 @@ montar a `Configuracao` e consumir o `Resultado`.
 
 O `pytest` já faz parte do `requirements.txt`, com a versão fixa.
 
-Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa e os
-vetores de voz são sintéticos. Isso mantém a suíte rápida o bastante para rodar a
-cada alteração.
+Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa, os
+vetores de voz são sintéticos e os segmentos do Whisper vêm de objetos falsos. Isso
+mantém a suíte rápida o bastante para rodar a cada alteração.
 
 | Arquivo | Cobre |
 |---|---|
 | `test_ffmpeg_tools.py` | Leitura das faixas a partir do relatório do ffmpeg |
+| `test_modelos.py` | Catálogo, apelidos antigos e detecção do motor pelo caminho |
+| `test_motor_whisper.py` | Quebra dos segmentos em falas e descarte de alucinações |
+| `test_vozes.py` | Média ponderada dos x-vectors de um trecho |
 | `test_diarizacao.py` | Agrupamento, nomeação, falas curtas e suavização |
-| `test_mesclagem.py` | Intercalação, agrupamento de falas e deslocamento |
-| `test_saida.py` | Formatos, tempos das legendas e tradução parcial |
-| `test_pipeline.py` | Validações antes de começar a transcrever |
+| `test_mesclagem.py` | Intercalação, agrupamento, deslocamento e falas simultâneas |
+| `test_saida.py` | Formatos, tempos das legendas, falas simultâneas e tradução parcial |
+| `test_pipeline.py` | Validações e montagem do contexto antes de transcrever |
 | `test_web.py` | Contrato entre a API e o formulário da página |
+| `test_instalacao.py` | O que a instalação no Windows exige do empacotamento |
 
 ### O teste do container
 
