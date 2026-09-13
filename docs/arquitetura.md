@@ -47,6 +47,18 @@ A dependência anda sempre para cima nesta tabela: nenhum módulo importa outro 
 esteja abaixo dele. `transcricao.py` não importa nada do projeto, e é dele que vem a
 `Fala` usada por todos os seguintes.
 
+### Onde as dependências são declaradas
+
+| Arquivo | Papel |
+|---|---|
+| `pyproject.toml` | Faixas abertas (`>=`) das dependências diretas. É o que vale quando o projeto é instalado como pacote. |
+| `requirements.txt` | Versões fixas (`==`) de tudo, diretas e transitivas. Reproduz o ambiente em que o projeto foi testado. |
+
+Os dois andam juntos: ao acrescentar uma biblioteca, declare a faixa no
+`pyproject.toml` e regenere o `requirements.txt` a partir do ambiente
+(`uv pip freeze | grep -v '^-e ' > requirements.txt`). O procedimento de instalação
+está no [guia de uso, seção 2.2](uso.md#22-dependências).
+
 ## O que foi estendido do `pytranscript`
 
 A biblioteca cobre transcrição de faixa única sem noção de locutor. Dois pontos
@@ -113,9 +125,10 @@ montar a `Configuracao` e consumir o `Resultado`.
 ## Testes
 
 ```bash
-uv pip install pytest
-python -m pytest tests -q
+.venv/bin/python -m pytest tests -q
 ```
+
+O `pytest` já faz parte do `requirements.txt`, com a versão fixa.
 
 Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa e os
 vetores de voz são sintéticos. Isso mantém a suíte rápida o bastante para rodar a

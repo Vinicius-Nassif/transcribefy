@@ -59,13 +59,77 @@ Só é preciso fazer isto uma vez. O projeto exige **Python 3.12** ou mais novo.
 # se ainda não tiver o projeto na máquina
 git clone https://github.com/Vinicius-Nassif/transcribefy.git
 cd transcribefy
+```
 
-# ambiente virtual e dependências
+### 2.1 Ambiente virtual
+
+Todas as bibliotecas ficam numa pasta `.venv/` dentro do projeto, isolada do Python
+do sistema. Com o [uv](https://docs.astral.sh/uv/):
+
+```bash
 uv venv --python 3.12
+```
+
+Sem o uv, o módulo `venv` da biblioteca padrão faz a mesma coisa:
+
+```bash
+python3.12 -m venv .venv
+```
+
+Não é obrigatório ativar o ambiente: chamar `.venv/bin/transcritor` já usa o Python
+e as bibliotecas de dentro dele. Se preferir digitar só `transcritor`:
+
+```bash
+source .venv/bin/activate   # para sair: deactivate
+```
+
+Se algo ficar inconsistente, apagar a pasta e recriá-la é seguro — nada além das
+dependências mora nela: `rm -rf .venv` e repita os passos.
+
+### 2.2 Dependências
+
+O [`requirements.txt`](../requirements.txt) lista **todas as versões fixas**, as
+mesmas em que o projeto foi testado. É a forma recomendada de instalar: uma
+atualização futura de qualquer biblioteca não muda o que entra no ambiente.
+
+```bash
+uv pip install -r requirements.txt
+uv pip install -e . --no-deps
+```
+
+Se o ambiente foi criado com `python3.12 -m venv`, ele já traz o `pip`, e os mesmos
+dois passos ficam assim:
+
+```bash
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e . --no-deps
+```
+
+> Ambientes criados com `uv venv` **não** incluem o `pip` — use o `uv pip` neles.
+
+O segundo comando registra o próprio projeto no ambiente — é ele que cria o
+executável `.venv/bin/transcritor`. O `--no-deps` evita que o instalador resolva de
+novo as faixas abertas do `pyproject.toml` e acabe subindo uma versão já fixada.
+
+Para acompanhar sempre as versões mais novas, em vez dos dois comandos acima:
+
+```bash
 uv pip install -e .
 ```
 
-### E o ffmpeg?
+Aí valem as faixas `>=` do `pyproject.toml`, e o ambiente pode variar de uma
+instalação para outra. O `pytest`, usado pelos testes, já vem no `requirements.txt`.
+
+> **Atualizar as versões fixas.** Depois de confirmar que tudo funciona com as
+> bibliotecas novas, regenere o arquivo a partir do ambiente:
+>
+> ```bash
+> uv pip freeze | grep -v '^-e ' > requirements.txt
+> ```
+>
+> O `grep` descarta a linha do próprio projeto, que não é uma dependência.
+
+### 2.3 E o ffmpeg?
 
 A aplicação precisa do ffmpeg para separar as trilhas. Se não houver um instalado
 no sistema, ela usa automaticamente o binário que vem junto com a dependência

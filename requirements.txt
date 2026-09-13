@@ -1,0 +1,54 @@
+# Dependencias do transcritor-rpg com versoes fixas.
+# Geradas a partir do ambiente validado (.venv) em 2026-09-13, Python >=3.12.
+# Instalacao: pip install -r requirements.txt
+
+# --- Dependencias diretas (runtime) ---
+fastapi==0.141.1
+imageio-ffmpeg==0.6.0
+numpy==2.5.3
+pytranscript==0.3.0
+python-multipart==0.0.32
+requests==2.34.2
+scipy==1.18.1
+tqdm==4.70.1
+uvicorn[standard]==0.52.4
+vosk==0.3.45
+
+# --- Dependencias diretas (testes) ---
+pytest==9.1.1
+
+# --- Transitivas (fixadas para reprodutibilidade) ---
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+beautifulsoup4==4.15.0
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+click==8.5.0
+deep-translator==1.11.4
+docstring-parser==0.18.0
+ffmpeg-python==0.2.0
+future==1.0.0
+h11==0.16.0
+httptools==0.8.0
+idna==3.19
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+pycparser==3.0
+pydantic==2.13.5
+pydantic-core==2.46.5
+pygments==2.21.0
+python-dotenv==1.2.3
+pyyaml==6.0.3
+soupsieve==2.9.2
+srt==3.5.3
+starlette==1.6.0
+typed-argument-parser==1.12.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+urllib3==2.7.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.1

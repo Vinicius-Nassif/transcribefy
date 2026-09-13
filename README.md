@@ -27,8 +27,10 @@ opcional, que consulta o Google Tradutor.
 ## Começando
 
 ```bash
+# ambiente virtual com as versões fixas do requirements.txt
 uv venv --python 3.12
-uv pip install -e .
+uv pip install -r requirements.txt
+uv pip install -e . --no-deps
 
 # quais faixas o arquivo tem?
 .venv/bin/transcritor faixas gravacao.mp4
@@ -45,6 +47,10 @@ Ou pelo navegador, em <http://127.0.0.1:8000>:
 ```bash
 .venv/bin/transcritor web
 ```
+
+Os comandos ficam em `.venv/bin/`; `source .venv/bin/activate` dispensa o prefixo.
+O passo a passo completo — inclusive sem o `uv` — está no
+[guia de uso, seção 2](docs/uso.md#2-instalação).
 
 Os modelos Vosk são baixados sob demanda na primeira execução. O ffmpeg é opcional:
 sem um no sistema, a aplicação usa o binário embutido no `imageio-ffmpeg`.
@@ -81,9 +87,9 @@ não corrompe o arquivo, e ele ainda preserva os nomes das trilhas.
 ## Desenvolvimento
 
 ```bash
-uv pip install pytest
-python -m pytest tests -q
+.venv/bin/python -m pytest tests -q
 ```
 
-Os testes não precisam de modelos nem de rede. A organização dos módulos e os
-pontos de extensão estão em [`docs/arquitetura.md`](docs/arquitetura.md).
+O `pytest` já vem no `requirements.txt`. Os testes não precisam de modelos nem de
+rede. A organização dos módulos e os pontos de extensão estão em
+[`docs/arquitetura.md`](docs/arquitetura.md).
