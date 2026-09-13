@@ -116,18 +116,20 @@ Feche e reabra o terminal depois e rode este script de novo.
 "@
 }
 
-function Tem-GpuNvidia {
-    if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) { return $false }
-    try {
-        $nomes = & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $nomes) { return $false }
-        foreach ($nome in $nomes) {
-            if ($nome.Trim()) { Escrever-Ok "GPU encontrada: $($nome.Trim())" }
-        }
-        return $true
-    } catch {
-        return $false
-    }
+function Perguntar-AoProjeto([string] $Codigo) {
+    $saida = & $VenvPython -c $Codigo 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $saida) { return $null }
+    return ($saida | Select-Object -First 1).Trim()
+}
+
+function Gpus-Visiveis {
+    # Pergunta ao CTranslate2, que e quem de fato decide usar a GPU na hora de
+    # transcrever. Procurar o nvidia-smi no PATH responderia outra pergunta, e
+    # as duas respostas divergem: da para ter placa visivel sem o nvidia-smi no
+    # caminho, e ai as bibliotecas CUDA nao seriam instaladas mas seriam usadas.
+    $n = Perguntar-AoProjeto "import ctranslate2; print(ctranslate2.get_cuda_device_count())"
+    if (-not $n) { return 0 }
+    return [int] $n
 }
 
 # ---------------------------------------------------------------------------
@@ -172,10 +174,13 @@ Invocar $VenvPython @("-m", "pip", "install", "-e", $Raiz, "--no-deps") `
 Escrever-Ok "dependencias instaladas e comando 'transcritor' registrado"
 
 Escrever-Etapa "5/6  Bibliotecas CUDA (opcional)"
+$gpus = if ($Gpu -eq "nao") { 0 } else { Gpus-Visiveis }
+if ($gpus -gt 0) { Escrever-Ok "$gpus GPU(s) NVIDIA visiveis" }
+
 $instalarGpu = switch ($Gpu) {
     "sim"  { $true }
     "nao"  { $false }
-    default { Tem-GpuNvidia }
+    default { $gpus -gt 0 }
 }
 if ($instalarGpu) {
     Write-Host "    Baixando ~1,4 GB de bibliotecas CUDA..."
@@ -185,29 +190,22 @@ if ($instalarGpu) {
 } elseif ($Gpu -eq "nao") {
     Escrever-Ok "pulado a pedido (-Gpu nao); tudo roda em CPU"
 } else {
-    Escrever-Aviso "nenhuma GPU NVIDIA detectada; tudo roda em CPU (mais lento, mesmo resultado)"
+    Escrever-Aviso "nenhuma GPU NVIDIA visivel; tudo roda em CPU (mais lento, mesmo resultado)"
 }
 
 Escrever-Etapa "6/6  Conferindo a instalacao"
-$verificacao = @"
-import transcritor
-from transcritor import ffmpeg_tools, motor_whisper
-dispositivo, precisao = motor_whisper.escolher_dispositivo()
-print('versao=' + transcritor.__version__)
-print('dispositivo=' + dispositivo + ' (' + precisao + ')')
-try:
-    print('ffmpeg=' + ffmpeg_tools.localizar_ffmpeg())
-except Exception as erro:
-    print('ffmpeg=AUSENTE ' + str(erro))
-"@
+# O proprio comando de diagnostico faz a conferencia: uma fonte de verdade so,
+# e o usuario pode repetir o mesmo comando depois para comparar.
 $env:PYTHONUTF8 = "1"
-$resultado = & $VenvPython -c $verificacao
+$resultado = & $VenvPython -m transcritor diagnostico
 if ($LASTEXITCODE -ne 0) { throw "A instalacao terminou, mas a aplicacao nao importou." }
-foreach ($linha in $resultado) { Escrever-Ok $linha }
+foreach ($linha in $resultado) { Write-Host "    $linha" }
 
-if ($resultado -match "dispositivo=cpu" -and $instalarGpu) {
-    Escrever-Aviso "as bibliotecas CUDA foram instaladas mas a GPU nao foi usada."
-    Escrever-Aviso "atualize o driver NVIDIA no Windows e rode o script de novo."
+if ($instalarGpu -and ($resultado -match "Dispositivo cpu")) {
+    Write-Host ""
+    Escrever-Aviso "as bibliotecas CUDA foram instaladas, mas a GPU nao sera usada."
+    Escrever-Aviso "a linha 'GPU' acima diz o motivo. A transcricao funciona em CPU,"
+    Escrever-Aviso "so que bem mais devagar."
 }
 
 if ($BaixarModelo) {

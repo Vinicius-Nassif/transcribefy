@@ -88,6 +88,27 @@ transcreve.
 O Vosk continua sendo dependência mesmo com o Whisper no comando: é dele que sai o
 modelo de x-vectors que `vozes.py` usa para separar as vozes dos jogadores.
 
+### Ter GPU e poder usar a GPU
+
+São perguntas diferentes, e confundi-las custava um erro no meio da transcrição:
+o CTranslate2 enxerga a placa só com o driver instalado, mas falha ao carregar a
+cuBLAS se as bibliotecas CUDA não estiverem lá. `diagnosticar_cuda()` responde a
+segunda pergunta — carrega o que encontrou e confere se os nomes que o
+CTranslate2 vai procurar resolvem — e `escolher_dispositivo` só devolve `cuda`
+quando ela diz que sim. O resto do projeto consome isso por um caminho só:
+
+```
+diagnosticar_cuda()
+  ├─ escolher_dispositivo()      decide, ou explica a quem pediu cuda
+  ├─ transcricao.aviso_de_dispositivo()  vira aviso no Resultado
+  └─ cli "diagnostico"           o que o usuário roda e cola num relato
+```
+
+Os scripts do Windows usam o mesmo `get_cuda_device_count()` para decidir se
+instalam a CUDA, e o instalador confere o resultado chamando
+`transcritor diagnostico`. É deliberado: quando a instalação e a execução
+perguntam coisas diferentes, a divergência só aparece transcrevendo.
+
 ### Onde as dependências são declaradas
 
 | Arquivo | Papel |
@@ -108,7 +129,7 @@ em qual deles estão — e são só três:
 | Onde | O quê |
 |---|---|
 | `requirements.txt` | O `uvloop` tem marcador de plataforma: não existe wheel dele para Windows, e sem o marcador `pip install -r` falharia inteiro lá. |
-| `motor_whisper._carregar_bibliotecas_cuda` | As bibliotecas CUDA do pip são `.so` em `lib/` no Linux e `.dll` em `bin/` no Windows, com formas de carregar diferentes. |
+| `motor_whisper._carregar_bibliotecas_cuda` | As bibliotecas CUDA do pip são `.so` em `lib/` no Linux e `.dll` em `bin/` no Windows. No Windows não basta registrar o diretório: as DLLs são pré-carregadas pelo caminho absoluto, porque uma biblioteca já carregada é encontrada pelo nome sem busca. |
 | `saida._gravar` e `cli._saida_em_utf8` | A codificação padrão do Windows é cp1252. Os arquivos são gravados em UTF-8 explícito, e a saída do terminal é reconfigurada — senão um travessão interromperia a gravação. |
 
 Dois scripts cobrem o Windows, cada um com um atalho `.cmd` que contorna a

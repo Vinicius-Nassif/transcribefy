@@ -100,6 +100,12 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
     )
     contexto = contexto_da_mesa(config)
 
+    avisos: list[str] = []
+    aviso_gpu = transcricao.aviso_de_dispositivo(modelo, config.dispositivo)
+    if aviso_gpu:
+        avisos.append(aviso_gpu)
+        aviso(aviso_gpu, 0.02)
+
     concluido = 0.0
     with tempfile.TemporaryDirectory(prefix="transcritor-") as tmp:
         temporario = Path(tmp)
@@ -195,7 +201,7 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
     return Resultado(
         falas=falas,
         arquivos=gerados.arquivos,
-        avisos=gerados.avisos,
+        avisos=avisos + gerados.avisos,
         locutores=sorted({f.locutor for f in falas}),
         duracao=max((f.fim for f in falas), default=0.0),
     )

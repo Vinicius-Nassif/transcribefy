@@ -12,11 +12,18 @@ from pathlib import Path
 
 import pytranscript
 
-from . import motor_vosk, motor_whisper
+from . import modelos, motor_vosk, motor_whisper
 from .fala import Fala
 from .modelos import ModeloPronto
 
-__all__ = ["SAMPLE_RATE", "Fala", "preparar_wav", "transcrever", "wav_valido"]
+__all__ = [
+    "SAMPLE_RATE",
+    "Fala",
+    "aviso_de_dispositivo",
+    "preparar_wav",
+    "transcrever",
+    "wav_valido",
+]
 
 SAMPLE_RATE = pytranscript.SAMPLE_RATE_AUDIO
 
@@ -33,6 +40,21 @@ def preparar_wav(origem: Path, destino: Path | None = None) -> Path:
     if wav_valido(Path(origem)):
         return Path(origem)
     return pytranscript.to_valid_wav(origem, destino)
+
+
+def aviso_de_dispositivo(modelo: ModeloPronto, preferencia: str = "auto") -> str:
+    """Avisa quando existe GPU mas a transcrição vai correr na CPU assim mesmo.
+
+    Sem isto a queda é invisível: a transcrição termina certa, só que dez vezes
+    mais devagar, e quem instalou as bibliotecas CUDA não descobre que elas não
+    estão sendo usadas. Devolve string vazia quando não há o que avisar.
+    """
+    if modelo.motor != modelos.MOTOR_WHISPER or preferencia == "cpu":
+        return ""
+    diagnostico = motor_whisper.diagnosticar_cuda()
+    if diagnostico.gpus < 1 or diagnostico.utilizavel:
+        return ""
+    return f"Transcrevendo em CPU, bem mais devagar. {diagnostico.explicacao}"
 
 
 def transcrever(

@@ -140,6 +140,8 @@ try {
     $ambiente = Perguntar-AoProjeto @"
 from transcritor import ffmpeg_tools, modelos, motor_whisper
 dispositivo, precisao = motor_whisper.escolher_dispositivo()
+cuda = motor_whisper.diagnosticar_cuda()
+gpu_ignorada = '' if cuda.utilizavel or cuda.gpus < 1 else ' '.join(cuda.explicacao.split())
 cache = modelos.diretorio_padrao()
 prontos = [m.apelido for m in modelos.MODELOS_FALA.values() if modelos.baixado(m, cache)]
 try:
@@ -147,13 +149,17 @@ try:
     ffmpeg = 'ok'
 except Exception:
     ffmpeg = 'ausente'
-print('|'.join([dispositivo + ' (' + precisao + ')', ffmpeg, ','.join(prontos)]))
+print('|'.join([dispositivo + ' (' + precisao + ')', ffmpeg, ','.join(prontos), gpu_ignorada]))
 "@
     if (-not $ambiente) { throw "O ambiente existe mas a aplicacao nao importou. Rode: .\scripts\instalar-windows.cmd -Recriar" }
 
     $partes = $ambiente -split '\|'
-    $dispositivo, $ffmpeg, $modelosProntos = $partes[0], $partes[1], $partes[2]
+    $dispositivo, $ffmpeg, $modelosProntos, $gpuIgnorada = $partes[0], $partes[1], $partes[2], $partes[3]
     Escrever-Ok "reconhecimento em $dispositivo"
+    if ($gpuIgnorada) {
+        Escrever-Aviso $gpuIgnorada
+        Escrever-Aviso "detalhes completos em: .venv\Scripts\transcritor.exe diagnostico"
+    }
     if ($ffmpeg -eq "ok") { Escrever-Ok "ffmpeg disponivel" } else { Escrever-Aviso "ffmpeg ausente" }
     if ($modelosProntos) {
         Escrever-Ok "modelos em cache: $modelosProntos"

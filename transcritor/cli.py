@@ -26,6 +26,7 @@ def _parser() -> argparse.ArgumentParser:
             "  transcritor transcrever sessao.mp4 --nomes Ana,Bruno,Caio,Duda,Edu\n"
             "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
+            "  transcritor diagnostico\n"
         ),
     )
     sub = p.add_subparsers(dest="comando", required=True)
@@ -36,6 +37,11 @@ def _parser() -> argparse.ArgumentParser:
     lista = sub.add_parser("modelos", help="lista e baixa os modelos de fala")
     lista.add_argument(
         "--baixar", metavar="APELIDO", help="baixa um modelo de fala antecipadamente"
+    )
+
+    sub.add_parser(
+        "diagnostico",
+        help="mostra tudo que decide se uma transcrição vai funcionar",
     )
 
     web = sub.add_parser("web", help="sobe a interface de envio de vídeo no navegador")
@@ -146,6 +152,35 @@ def _cmd_modelos(args) -> int:
     return 0
 
 
+def _cmd_diagnostico(args) -> int:
+    """Reúne num lugar só o que costuma explicar uma transcrição que falhou."""
+    import platform
+
+    from . import motor_whisper
+
+    print(f"Python      {platform.python_version()} em {platform.platform()}")
+
+    try:
+        print(f"ffmpeg      {ffmpeg_tools.localizar_ffmpeg()}")
+    except ffmpeg_tools.FFmpegIndisponivel as erro:
+        print(f"ffmpeg      AUSENTE — {erro}")
+
+    cuda = motor_whisper.diagnosticar_cuda()
+    dispositivo, precisao = motor_whisper.escolher_dispositivo()
+    print(f"Dispositivo {dispositivo} ({precisao})")
+    print(f"GPU         {cuda.explicacao}")
+    if cuda.pasta_bibliotecas:
+        print(f"            bibliotecas em {cuda.pasta_bibliotecas}")
+
+    cache = modelos.diretorio_padrao()
+    baixados = [m.apelido for m in modelos.MODELOS_FALA.values() if modelos.baixado(m, cache)]
+    print(f"Modelos     {', '.join(baixados) if baixados else 'nenhum baixado ainda'}")
+    print(f"            cache em {cache}")
+    if not modelos.baixado(modelos.MODELO_LOCUTOR, cache):
+        print("            falta o modelo de locutor; ele é baixado na primeira transcrição")
+    return 0
+
+
 def _cmd_web(args) -> int:
     import uvicorn
 
@@ -225,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     acoes = {
         "faixas": _cmd_faixas,
         "modelos": _cmd_modelos,
+        "diagnostico": _cmd_diagnostico,
         "web": _cmd_web,
         "transcrever": _cmd_transcrever,
     }

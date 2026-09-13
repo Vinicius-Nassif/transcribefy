@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from transcritor import motor_whisper
 
 
@@ -96,3 +98,53 @@ def test_a_lista_de_alucinacoes_so_tem_credito_de_legenda():
     """Qualquer frase plausível numa mesa de RPG aqui vira fala perdida."""
     for frase in motor_whisper.ALUCINACOES:
         assert "amara" in frase, frase
+
+
+def diagnostico(gpus=1, pasta=None, faltando=()):
+    return motor_whisper.DiagnosticoCuda(gpus, pasta, faltando)
+
+
+def test_ter_placa_nao_basta_para_a_gpu_ser_utilizavel():
+    """Foi o que faltava: o CTranslate2 via a GPU e falhava só ao carregar cuBLAS."""
+    assert diagnostico(gpus=1, faltando=()).utilizavel
+    assert not diagnostico(gpus=1, faltando=("cublas64_12.dll",)).utilizavel
+    assert not diagnostico(gpus=0).utilizavel
+
+
+def test_a_explicacao_manda_instalar_quando_os_pacotes_nem_existem():
+    texto = diagnostico(gpus=1, pasta=None, faltando=("cublas64_12.dll",)).explicacao
+    assert "requirements-gpu.txt" in texto
+
+
+def test_a_explicacao_aponta_o_driver_quando_os_pacotes_estao_no_lugar(tmp_path):
+    texto = diagnostico(gpus=1, pasta=tmp_path, faltando=("cublas64_12.dll",)).explicacao
+    assert "driver" in texto.lower()
+    assert str(tmp_path) in texto
+
+
+def test_a_explicacao_de_maquina_sem_placa_nao_manda_instalar_nada():
+    assert "requirements-gpu" not in diagnostico(gpus=0).explicacao
+
+
+def test_cai_para_cpu_quando_a_gpu_existe_mas_as_bibliotecas_nao_carregam(monkeypatch):
+    """A queda acontece antes de abrir o modelo, não no meio da transcrição."""
+    monkeypatch.setattr(
+        motor_whisper, "_diagnostico_cuda", diagnostico(gpus=1, faltando=("cublas64_12.dll",))
+    )
+    assert motor_whisper.escolher_dispositivo("auto") == ("cpu", "int8")
+
+
+def test_quem_pediu_cuda_recebe_o_motivo_em_vez_da_queda_silenciosa(monkeypatch):
+    monkeypatch.setattr(
+        motor_whisper, "_diagnostico_cuda", diagnostico(gpus=1, faltando=("cublas64_12.dll",))
+    )
+    with pytest.raises(RuntimeError, match="cublas64_12.dll"):
+        motor_whisper.escolher_dispositivo("cuda")
+
+
+def test_pedir_cpu_nem_consulta_a_gpu(monkeypatch):
+    def explodir():
+        raise AssertionError("não deveria olhar a GPU")
+
+    monkeypatch.setattr(motor_whisper, "diagnosticar_cuda", explodir)
+    assert motor_whisper.escolher_dispositivo("cpu") == ("cpu", "int8")

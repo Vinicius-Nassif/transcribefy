@@ -6,6 +6,7 @@ silêncio — e que só apareceria na máquina de quem está instalando.
 """
 
 import codecs
+import re
 from pathlib import Path
 
 import pytest
@@ -69,3 +70,22 @@ def test_o_iniciador_chama_o_instalador_pelo_nome_certo():
     conteudo = INICIADOR.read_text(encoding="utf-8-sig")
     assert "instalar-windows.ps1" in conteudo
     assert INSTALADOR.is_file()
+
+
+def test_o_instalador_decide_a_gpu_pelo_mesmo_sinal_do_runtime():
+    """Procurar o nvidia-smi no PATH responde outra pergunta.
+
+    Dá para ter placa visível ao CTranslate2 sem o nvidia-smi no caminho: as
+    bibliotecas CUDA não seriam instaladas, mas a GPU seria escolhida na hora de
+    transcrever — e a falha só apareceria no meio da execução.
+    """
+    conteudo = INSTALADOR.read_text(encoding="utf-8-sig")
+    assert "get_cuda_device_count" in conteudo
+    assert "Get-Command nvidia-smi" not in conteudo
+
+
+@pytest.mark.parametrize("comando", COMANDOS)
+def test_os_scripts_apontam_para_o_diagnostico(comando):
+    """É o comando que o usuário roda quando algo não funciona."""
+    conteudo = (SCRIPTS / f"{comando}.ps1").read_text(encoding="utf-8-sig")
+    assert re.search(r"transcritor(\.exe)?\s+diagnostico", conteudo), comando

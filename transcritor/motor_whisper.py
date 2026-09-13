@@ -12,12 +12,13 @@ Aqui não se calcula nada de locutor: os vetores de voz saem de
 from __future__ import annotations
 
 import ctypes
+import importlib.util
 import os
 import re
-import sysconfig
 import unicodedata
 import wave
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from .fala import Fala
@@ -59,72 +60,161 @@ _modelo_aberto: tuple[tuple[str, str, str], object] | None = None
 # Handles de `os.add_dll_directory` (Windows): soltá-los desfaz o registro, então
 # eles precisam viver enquanto o processo viver.
 _diretorios_dll: list = []
-_cuda_preparada = False
+_diagnostico_cuda: DiagnosticoCuda | None = None
 
 # Componentes CUDA que o CTranslate2 procura, na ordem de dependência.
 COMPONENTES_CUDA = ("cublas", "cuda_nvrtc", "cudnn")
 
+# As bibliotecas sem as quais o CTranslate2 falha na GPU — e com os nomes exatos
+# pelos quais ele as procura. Conferir por nome, e não por arquivo em disco, é o
+# que reproduz a busca que ele faz: só assim sabemos que vai encontrá-las.
+ESSENCIAIS_WINDOWS = ("cublas64_12.dll", "cudnn64_9.dll")
+ESSENCIAIS_LINUX = ("libcublas.so.12", "libcudnn.so.9")
 
-def _carregar_bibliotecas_cuda() -> None:
-    """Deixa as bibliotecas CUDA instaladas via pip visíveis para o CTranslate2.
+
+def _essenciais() -> tuple[str, ...]:
+    return ESSENCIAIS_WINDOWS if os.name == "nt" else ESSENCIAIS_LINUX
+
+
+def _carregar(alvo: str) -> None:
+    """Carrega uma biblioteca por caminho ou por nome, como o sistema exige."""
+    if os.name == "nt":
+        ctypes.WinDLL(alvo)
+    else:
+        ctypes.CDLL(alvo, mode=ctypes.RTLD_GLOBAL)
+
+
+def _pasta_dos_pacotes_nvidia() -> Path | None:
+    """Onde o pip pôs os pacotes `nvidia-*`, perguntando ao importador.
+
+    Deduzir o caminho a partir de `sysconfig` erra em ambientes que não seguem o
+    layout padrão; o importador sabe a resposta certa por construção.
+    """
+    try:
+        especificacao = importlib.util.find_spec("nvidia")
+    except (ImportError, ValueError):
+        return None
+    if especificacao is None or not especificacao.submodule_search_locations:
+        return None
+    return Path(next(iter(especificacao.submodule_search_locations)))
+
+
+def _carregar_bibliotecas_cuda() -> tuple[Path | None, tuple[str, ...]]:
+    """Torna as bibliotecas CUDA do pip visíveis e devolve (pasta, o que falta).
 
     O CTranslate2 procura `cublas`/`cudnn` pelo carregador do sistema, que não
-    enxerga os pacotes `nvidia-*` dentro do venv. Resolver isso aqui evita ter
-    de preparar o ambiente (LD_LIBRARY_PATH, PATH) antes de cada comando.
+    enxerga os pacotes `nvidia-*` dentro do venv. Resolver isso aqui evita ter de
+    preparar o ambiente (LD_LIBRARY_PATH, PATH) antes de cada comando.
 
-    Os dois sistemas guardam os arquivos em lugares diferentes e carregam de
-    formas diferentes: no Linux são `.so` em `lib/`, pré-carregados com
-    RTLD_GLOBAL em duas passagens porque dependem uns dos outros; no Windows são
-    `.dll` em `bin/`, e basta registrar o diretório no carregador.
+    No Windows não basta registrar o diretório: fazemos as três coisas que o
+    carregador aceita — registrar a pasta, pô-la no PATH e pré-carregar cada DLL
+    pelo caminho absoluto. É a última que garante o resultado, porque uma
+    biblioteca já carregada é encontrada pelo nome sem busca nenhuma.
+
+    Em ambos os sistemas o carregamento é feito em duas passagens: as
+    bibliotecas dependem umas das outras e a ordem alfabética não respeita isso.
     """
-    global _cuda_preparada
-
-    if _cuda_preparada:
-        return
-    _cuda_preparada = True
-
-    raiz = Path(sysconfig.get_paths()["purelib"]) / "nvidia"
-    if os.name == "nt":
-        for componente in COMPONENTES_CUDA:
-            pasta = raiz / componente / "bin"
-            if pasta.is_dir():
+    raiz = _pasta_dos_pacotes_nvidia()
+    if raiz is not None:
+        subpasta, padrao = ("bin", "*.dll") if os.name == "nt" else ("lib", "*.so*")
+        arquivos = [
+            arquivo
+            for componente in COMPONENTES_CUDA
+            for arquivo in sorted((raiz / componente / subpasta).glob(padrao))
+        ]
+        if os.name == "nt":
+            for pasta in sorted({arquivo.parent for arquivo in arquivos}):
                 _diretorios_dll.append(os.add_dll_directory(str(pasta)))
-        return
+                os.environ["PATH"] = f"{pasta}{os.pathsep}{os.environ.get('PATH', '')}"
+        for _ in range(2):
+            for arquivo in arquivos:
+                try:
+                    _carregar(str(arquivo))
+                except OSError:
+                    continue
 
-    arquivos = [
-        arquivo
-        for componente in COMPONENTES_CUDA
-        for arquivo in sorted((raiz / componente / "lib").glob("*.so*"))
-    ]
-    for _ in range(2):
-        for arquivo in arquivos:
-            try:
-                ctypes.CDLL(str(arquivo), mode=ctypes.RTLD_GLOBAL)
-            except OSError:
-                continue
+    faltando = []
+    for nome in _essenciais():
+        try:
+            _carregar(nome)
+        except OSError:
+            faltando.append(nome)
+    return raiz, tuple(faltando)
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticoCuda:
+    """O que separa 'tem GPU' de 'dá para usar a GPU'."""
+
+    gpus: int
+    pasta_bibliotecas: Path | None
+    faltando: tuple[str, ...]
+
+    @property
+    def utilizavel(self) -> bool:
+        return self.gpus > 0 and not self.faltando
+
+    @property
+    def explicacao(self) -> str:
+        if self.gpus < 1:
+            return "Nenhuma GPU NVIDIA visível."
+        if not self.faltando:
+            return f"{self.gpus} GPU(s) NVIDIA prontas para uso."
+        ausentes = ", ".join(self.faltando)
+        if self.pasta_bibliotecas is None:
+            return (
+                f"Há {self.gpus} GPU(s) NVIDIA, mas as bibliotecas CUDA não estão "
+                f"instaladas ({ausentes}). Instale com:\n"
+                "    .venv\\Scripts\\python.exe -m pip install -r requirements-gpu.txt\n"
+                "  (no Linux: .venv/bin/python -m pip install -r requirements-gpu.txt)"
+            )
+        return (
+            f"Há {self.gpus} GPU(s) NVIDIA e os pacotes CUDA estão em "
+            f"{self.pasta_bibliotecas}, mas o sistema não consegue carregar "
+            f"{ausentes}. Costuma ser driver NVIDIA antigo demais para o CUDA 12: "
+            "atualize-o (no Windows, pelo GeForce Experience ou pelo site da NVIDIA)."
+        )
+
+
+def diagnosticar_cuda() -> DiagnosticoCuda:
+    """Descobre — uma vez por processo — se a GPU pode mesmo ser usada."""
+    global _diagnostico_cuda
+
+    if _diagnostico_cuda is not None:
+        return _diagnostico_cuda
+
+    import ctranslate2
+
+    gpus = ctranslate2.get_cuda_device_count()
+    if gpus < 1:
+        _diagnostico_cuda = DiagnosticoCuda(0, None, ())
+        return _diagnostico_cuda
+
+    pasta, faltando = _carregar_bibliotecas_cuda()
+    _diagnostico_cuda = DiagnosticoCuda(gpus, pasta, faltando)
+    return _diagnostico_cuda
 
 
 def escolher_dispositivo(preferencia: str = "auto") -> tuple[str, str]:
     """Decide onde rodar e em que precisão, devolvendo (dispositivo, precisão).
 
-    `auto` usa a GPU quando há uma utilizável e cai para a CPU quando não há.
-    A queda para a CPU é silenciosa de propósito: o resultado é o mesmo, só mais
-    lento, e não faz sentido interromper uma transcrição de três horas por isso.
+    `auto` só devolve "cuda" quando a GPU está de fato utilizável — ter placa não
+    basta, as bibliotecas CUDA precisam carregar. Sem elas a queda para a CPU
+    acontece aqui, antes de abrir o modelo, em vez de virar um erro no meio de
+    uma transcrição de três horas. Quem pediu "cuda" explicitamente recebe o
+    motivo em vez da queda silenciosa.
     """
     if preferencia == "cpu":
         return "cpu", "int8"
 
-    import ctranslate2
-
-    if ctranslate2.get_cuda_device_count() < 1:
+    diagnostico = diagnosticar_cuda()
+    if not diagnostico.utilizavel:
         if preferencia == "cuda":
-            raise RuntimeError(
-                "Nenhuma GPU NVIDIA visível. Use --dispositivo cpu ou verifique "
-                "os drivers (no WSL, o CUDA vem do driver do Windows)."
-            )
+            raise RuntimeError(diagnostico.explicacao)
         return "cpu", "int8"
 
-    _carregar_bibliotecas_cuda()
+    import ctranslate2
+
     if "int8_float16" in ctranslate2.get_supported_compute_types("cuda"):
         return "cuda", "int8_float16"
     return "cuda", "float16"

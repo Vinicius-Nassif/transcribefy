@@ -213,12 +213,15 @@ driver NVIDIA dentro do WSL.
 Para conferir o que a aplicação vai usar:
 
 ```bash
-.venv/bin/python -c "from transcritor import motor_whisper; print(motor_whisper.escolher_dispositivo())"
+.venv/bin/transcritor diagnostico
 ```
 
-`('cuda', 'int8_float16')` é GPU; `('cpu', 'int8')` é CPU. A escolha é automática e
-cai para a CPU sozinha quando não há GPU utilizável — `--dispositivo cpu` força, e
-`--dispositivo cuda` falha com uma mensagem em vez de cair calado.
+A linha `Dispositivo` diz onde o reconhecimento vai rodar e a linha `GPU` diz por
+quê. A escolha é automática: **ter placa não basta** — as bibliotecas CUDA
+precisam carregar de verdade, e isso é conferido antes de abrir o modelo, não no
+meio da transcrição. Sem elas a aplicação cai para a CPU e avisa.
+`--dispositivo cpu` força a CPU; `--dispositivo cuda` falha com o motivo em vez
+de cair calado.
 
 ### 2.4 E o ffmpeg?
 
@@ -413,6 +416,7 @@ campos do formulário.
 
 | Comando | Para quê |
 |---|---|
+| `transcritor diagnostico` | Mostra tudo que decide se uma transcrição vai funcionar: dispositivo, GPU, ffmpeg e modelos. É o primeiro comando a rodar quando algo dá errado. |
 | `transcritor faixas <arquivo>` | Lista as trilhas de áudio e a duração. |
 | `transcritor modelos` | Mostra os modelos disponíveis e quais já estão em cache. |
 | `transcritor modelos --baixar preciso` | Baixa um modelo antes de precisar dele. |
@@ -754,6 +758,31 @@ Confira primeiro se o `-n` bate com o número real de vozes na faixa 2 — infor
 número exato funciona bem melhor que `auto`. Se ainda assim ficar confuso, veja o
 [ajuste fino](#9-ajuste-fino-da-separação-de-vozes): a mesa pode se beneficiar de um
 `MIN_FRAMES_CONFIAVEL` diferente.
+
+### A GPU não está sendo usada
+
+> `Transcrevendo em CPU, bem mais devagar.` no fim da transcrição, ou
+> `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded`
+
+Rode o diagnóstico — a linha `GPU` diz qual dos dois casos é o seu:
+
+```bash
+.venv/bin/transcritor diagnostico          # no Windows: .venv\Scripts\transcritor.exe
+```
+
+- **"as bibliotecas CUDA não estão instaladas"** — elas são opcionais e não vêm
+  no `requirements.txt`. Instale com
+  `pip install -r requirements-gpu.txt`, ou rode de novo o
+  `scripts\instalar-windows.cmd`, que agora as instala sempre que enxerga uma
+  placa.
+- **"o sistema não consegue carregar ..."** — os pacotes estão no lugar, mas o
+  driver NVIDIA é antigo demais para o CUDA 12. Atualize o driver pelo site da
+  NVIDIA ou pelo GeForce Experience. No WSL, o driver é o do Windows: não
+  instale driver NVIDIA dentro do Linux.
+
+Em ambos os casos a transcrição **continua funcionando em CPU** — o resultado é
+o mesmo, só mais lento. A queda acontece antes de abrir o modelo justamente para
+não interromper uma sessão de três horas pela metade.
 
 ### A primeira execução está parada
 
