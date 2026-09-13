@@ -4,7 +4,10 @@ __pycache__/
 venv/
 modelos/
 dados/
+midia/
 saida/
 *.wav
 *.mp4
 .uploads/
+.env
+docker-compose.override.yml

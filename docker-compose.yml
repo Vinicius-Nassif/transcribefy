@@ -1,0 +1,31 @@
+# Interface web em http://127.0.0.1:8000
+#   docker compose up -d --build
+# Linha de comando no mesmo serviço (não precisa do servidor no ar):
+#   docker compose run --rm transcribefy faixas /midia/gravacao.mp4
+#
+# Os caminhos e a porta saem de variáveis com valor padrão: para mudá-los, crie
+# um arquivo .env a partir do .env.exemplo em vez de editar este arquivo, que é
+# versionado e igual para todo mundo.
+services:
+  transcribefy:
+    build: .
+    image: transcribefy:local
+    # Padrão: só a própria máquina enxerga a interface, que não tem autenticação.
+    ports:
+      - "${TRANSCRIBEFY_BIND:-127.0.0.1:8000}:8000"
+    # UID:GID de quem escreve nos arquivos gerados. O padrão é o usuário da
+    # imagem, que é o mesmo UID 1000 da maioria das instalações Linux e do WSL.
+    user: "${TRANSCRIBEFY_UID:-1000}:${TRANSCRIBEFY_GID:-1000}"
+    volumes:
+      # Cache dos modelos Vosk. Volume nomeado: sobrevive a `down` e a
+      # reconstruções da imagem, evitando rebaixar 1,6 GB a cada vez.
+      - modelos:/modelos
+      # Vídeos de entrada, somente leitura — a aplicação nunca escreve neles.
+      - ${TRANSCRIBEFY_MIDIA:-./midia}:/midia:ro
+      # Trabalhos da interface web e transcrições da CLI, visíveis no host.
+      - ${TRANSCRIBEFY_DADOS:-./dados}:/app/dados
+      - ${TRANSCRIBEFY_SAIDA:-./saida}:/app/saida
+    restart: unless-stopped
+
+volumes:
+  modelos:

@@ -59,6 +59,31 @@ Os dois andam juntos: ao acrescentar uma biblioteca, declare a faixa no
 (`uv pip freeze | grep -v '^-e ' > requirements.txt`). O procedimento de instalação
 está no [guia de uso, seção 2.2](uso.md#22-dependências).
 
+### A imagem do container
+
+O `Dockerfile` instala a partir do `requirements.txt`, e não do `pyproject.toml` —
+é o que torna a imagem reproduzível. Ele não duplica configuração do projeto: o
+entrypoint é o próprio executável `transcritor`, então as duas interfaces saem da
+mesma imagem, e o único ajuste de ambiente é `TRANSCRITOR_MODELOS=/modelos`, que
+aponta o cache dos modelos para um volume.
+
+| Caminho no container | Conteúdo |
+|---|---|
+| `/app` | Código, instalado em modo editável. Diretório de trabalho, o que faz `-o saida/...` cair em `/app/saida`. |
+| `/modelos` | Cache dos modelos Vosk, em volume nomeado. |
+| `/midia` | Gravações de entrada, somente leitura. |
+| `/app/dados` | `RAIZ_TRABALHOS` do `web.py`, que é relativa ao diretório de trabalho. |
+
+Ao mexer nesses caminhos, lembre que `web.py` resolve `dados/trabalhos` a partir do
+diretório de trabalho: mudar o `WORKDIR` muda onde os envios da interface caem.
+
+O `docker-compose.yml` é versionado e não carrega nada específico de uma máquina: os
+caminhos do host, a porta e o UID saem de variáveis com valor padrão
+(`${TRANSCRIBEFY_SAIDA:-./saida}` e companhia), preenchidas por um `.env` local a
+partir do [`.env.exemplo`](../.env.exemplo). É o que permite apontar a saída para uma
+pasta do Windows sem editar — nem versionar — a configuração de ninguém. O uso está
+em [`docs/docker.md`](docker.md).
+
 ## O que foi estendido do `pytranscript`
 
 A biblioteca cobre transcrição de faixa única sem noção de locutor. Dois pontos

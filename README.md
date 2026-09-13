@@ -21,6 +21,8 @@ opcional, que consulta o Google Tradutor.
 
 - **[Guia de uso](docs/uso.md)** — instalação, como iniciar, todas as opções,
   personalização e solução de problemas.
+- **[Rodar em container](docs/docker.md)** — a mesma aplicação pelo Docker, sem
+  instalar Python nem ffmpeg na máquina.
 - **[Arquitetura](docs/arquitetura.md)** — organização dos módulos e pontos de
   extensão.
 
@@ -52,11 +54,28 @@ Os comandos ficam em `.venv/bin/`; `source .venv/bin/activate` dispensa o prefix
 O passo a passo completo — inclusive sem o `uv` — está no
 [guia de uso, seção 2](docs/uso.md#2-instalação).
 
+### Ou por container
+
+Sem instalar nada além do Docker:
+
+```bash
+mkdir -p midia dados saida        # coloque as gravações em midia/
+docker compose up -d              # interface em http://127.0.0.1:8000
+
+docker compose run --rm transcribefy transcrever /midia/gravacao.mp4 \
+  --nomes "Ana,Bruno,Caio,Duda,Edu" -o saida/sessao-01
+```
+
+Detalhes, volumes e solução de problemas em [`docs/docker.md`](docs/docker.md).
+
 Os modelos Vosk são baixados sob demanda na primeira execução. O ffmpeg é opcional:
 sem um no sistema, a aplicação usa o binário embutido no `imageio-ffmpeg`.
 
 Saída em `txt`, `csv`, `json`, `srt`, `vtt`, `md` e um `.detalhado.json` com início,
-fim, faixa de origem e locutor de cada fala.
+fim, faixa de origem e locutor de cada fala. Os arquivos vão para `saida/` pela linha
+de comando e para `dados/` pela interface web, que também os oferece para download —
+inclusive num navegador do Windows. Detalhes, e como gravar direto numa pasta do
+Windows a partir do WSL, no [guia de uso, seção 8](docs/uso.md#8-arquivos-gerados).
 
 ## Sobre a separação de vozes
 

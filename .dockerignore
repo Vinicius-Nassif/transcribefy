@@ -1,0 +1,24 @@
+# Fora da imagem: ambiente local, caches e todo material de mídia/saída, que
+# chega por volume em vez de ser copiado.
+.git/
+.gitignore
+.env
+.env.exemplo
+Dockerfile
+docker-compose*.yml
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+docs/
+README.md
+dados/
+saida/
+midia/
+modelos/
+.uploads/
+*.wav
+*.mp4
+*.mkv

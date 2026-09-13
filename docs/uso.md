@@ -3,6 +3,7 @@
 Como instalar, iniciar e configurar o Transcribefy.
 
 Para uma visão geral do projeto, veja o [README](../README.md).
+Para rodar tudo em container, [`docs/docker.md`](docker.md).
 Para a arquitetura interna, [`docs/arquitetura.md`](arquitetura.md).
 
 **Índice**
@@ -143,6 +144,20 @@ sudo apt install ffmpeg
 > **Os modelos de reconhecimento não vêm no repositório.** São baixados sozinhos na
 > primeira transcrição e ficam em cache — a primeira execução demora alguns minutos
 > a mais por causa disso.
+
+### 2.4 Ou nada disso: container
+
+Se preferir não instalar Python, ffmpeg nem as dependências na máquina, a aplicação
+roda igual dentro de um container, com as duas interfaces:
+
+```bash
+mkdir -p midia dados saida
+docker compose up -d
+```
+
+O guia completo — volumes, caminhos dentro do container e permissões — está em
+[`docs/docker.md`](docker.md). O restante deste documento vale para as duas formas
+de instalação; só os caminhos dos arquivos mudam.
 
 ---
 
@@ -390,6 +405,42 @@ quanto cada jogador falou, cruzar com as rolagens de dado:
 
 As legendas `.srt` e `.vtt` usam o tempo final real de cada fala, e não uma
 estimativa fixa — elas acompanham a duração da frase.
+
+### Onde eles ficam
+
+| Interface | Caminho |
+|---|---|
+| Linha de comando | O que você passou em `-o`. Sem essa opção, `saida/<nome-do-vídeo>`, **relativo à pasta de onde o comando foi chamado**. |
+| Web | `dados/trabalhos/<código>/`, um diretório por envio, com a cópia do vídeo enviado ao lado das transcrições. |
+
+A página de resultado oferece cada arquivo para download, o que costuma ser a forma
+mais direta de tirá-los dali — principalmente se o navegador está noutra máquina.
+
+> **A pasta `dados/` só cresce.** Nada apaga os trabalhos antigos, e cada um guarda
+> uma cópia do vídeo — vários GB por sessão. Depois de baixar o que interessa,
+> `rm -rf dados/trabalhos/<código>`.
+
+Rodando em container, esses mesmos caminhos ficam dentro dele e aparecem no host
+conforme os volumes montados:
+[`docs/docker.md`, seção 6](docker.md#6-onde-a-transcrição-fica).
+
+### Salvar no Windows, a partir do WSL
+
+O disco do Windows aparece em `/mnt/c`, então basta apontar a saída para lá:
+
+```bash
+.venv/bin/transcritor transcrever gravacao.mp4 \
+  -o /mnt/c/Users/<voce>/Documents/sessoes/sessao-01
+```
+
+O caminho inverso costuma ser ainda mais prático: o Explorer do Windows abre a pasta
+do projeto sem copiar nada, pelo endereço
+`\\wsl.localhost\<distro>\home\<usuário>\...\transcricao_audio\saida`.
+
+> **Deixe só a saída no `/mnt/c`.** O acesso ao disco do Windows pelo WSL é bem mais
+> lento que ao disco do Linux. Nos arquivos de texto gerados, de poucos MB, isso não
+> se nota; já o **vídeo de entrada** e os WAVs temporários — centenas de MB por hora
+> de gravação — deixam a transcrição sensivelmente mais lenta se ficarem ali.
 
 ---
 
