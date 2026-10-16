@@ -397,6 +397,11 @@ par sem pacote direto é montado pelo inglês, se os dois pacotes existirem.
 
 O `pytest` já faz parte do `requirements.txt`, com a versão fixa.
 
+A mesma suíte roda no GitHub Actions (`.github/workflows/testes.yml`) a cada PR e
+a cada push na `main`, no **Linux e no Windows**. O Windows está lá de propósito:
+é onde o `temporarios.py` usa `msvcrt.locking` em vez de `fcntl.flock`, e onde a
+codificação padrão (cp1252) quebraria a gravação dos arquivos.
+
 Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa, os
 vetores de voz são sintéticos e os segmentos do Whisper vêm de objetos falsos. Isso
 mantém a suíte rápida o bastante para rodar a cada alteração.

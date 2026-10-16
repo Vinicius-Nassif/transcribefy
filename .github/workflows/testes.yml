@@ -1,0 +1,33 @@
+# Roda a suíte no Linux e no Windows a cada PR e a cada push na main.
+#
+# O Windows não é decoração: as pastas temporárias usam msvcrt.locking lá e
+# fcntl.flock no Linux (transcritor/temporarios.py), as DLLs da CUDA têm um
+# caminho próprio, e a gravação em UTF-8 só falha na cp1252 do Windows. Os
+# testes não precisam de modelos, GPU nem rede; o ffmpeg vem do imageio-ffmpeg.
+name: testes
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Dependências (versões fixas do requirements.txt)
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e . --no-deps
+      - name: Testes
+        run: python -m pytest tests -q
