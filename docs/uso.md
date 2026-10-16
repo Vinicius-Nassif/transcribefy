@@ -23,13 +23,23 @@ Para a arquitetura interna, [`docs/arquitetura.md`](arquitetura.md).
 
 ## 1. O que a ferramenta faz
 
-No OBS, o microfone do GM é gravado na trilha 1 e o áudio do Discord com os cinco
-jogadores na trilha 2. O Transcribefy lê as duas separadamente e as costura de
-volta numa linha do tempo só.
+Cada microfone da mesa é uma **faixa**. A mesa clássica tem duas: no OBS, o
+microfone do GM na trilha 1 e o áudio do Discord com os cinco jogadores na trilha
+2. O Transcribefy lê cada faixa separadamente e as costura de volta numa linha do
+tempo só.
 
-A faixa 1 não precisa de análise: é sempre a mesma pessoa, então cada fala recebe
-o rótulo do GM direto. Só a faixa 2 passa pela separação de vozes, que agrupa as
-falas por semelhança de timbre.
+Cada faixa é de um de dois tipos:
+
+- **Uma pessoa** (o microfone do GM, ou o de um jogador): toda fala recebe o nome
+  dela direto, sem análise de voz.
+- **Várias pessoas** (o retorno do Discord, um microfone de mesa): as falas passam
+  pela separação de vozes, que as agrupa por semelhança de timbre.
+
+São de 1 a 8 faixas por transcrição, e cada uma pode vir de uma trilha do mesmo
+arquivo ou de um arquivo próprio — como nas gravações do Craig, com um arquivo por
+pessoa. O limite de 8 cobre as 6 trilhas que o OBS grava, com folga; cada faixa a
+mais é mais uma passada do reconhecimento, então o tempo cresce na mesma proporção
+(a memória não: as faixas são transcritas uma de cada vez).
 
 O reconhecimento é feito pelo Whisper, que decodifica o áudio em janelas de 30 s
 levando em conta o que já transcreveu. É de onde vêm a pontuação, as maiúsculas e a
@@ -307,6 +317,17 @@ servidor: ele só abre o navegador no que já está rodando.
 Abra <http://127.0.0.1:8000> no navegador. O servidor roda enquanto o comando
 estiver ativo; `Ctrl+C` encerra. Para trocar a porta: `--porta 8080`.
 
+A página segue a ordem em que se preenche: **1** o arquivo, **2** as faixas e
+quem fala em cada uma, **3** um trecho (opcional, para testar), **4** os termos da
+campanha e **5** modelo, idioma e tradução. Cada campo tem um **i** que explica o
+que é e como preencher — pelo mouse, pelo teclado (Tab) ou com um toque. O
+formulário volta como estava da última vez, com as faixas e os nomes.
+
+Durante o processamento, a barra mostra a etapa, a porcentagem, o tempo decorrido
+e quanto falta. A estimativa aparece depois dos primeiros segundos e se ajusta ao
+ritmo real; no envio do arquivo, ela é a do upload. **Cancelar** interrompe tanto
+o envio quanto a transcrição, e apaga o que tiver sido gerado.
+
 > **Por que `--host 0.0.0.0`?** Se você roda o projeto no WSL2 e abre o navegador no
 > Windows, ligar em `0.0.0.0` faz a aplicação responder tanto pelo `127.0.0.1`
 > quanto pelo IP da máquina virtual, o que evita o caso em que o encaminhamento de
@@ -318,10 +339,10 @@ estiver ativo; `Ctrl+C` encerra. Para trocar a porta: `--porta 8080`.
 .venv/bin/transcritor transcrever gravacao.mp4 -o saida/sessao-01
 ```
 
-> **Para a gravação completa, prefira a linha de comando.** A interface web copia o
-> arquivo inteiro para `dados/trabalhos/` durante o envio. Numa sessão de três
-> horas, isso significa vários GB duplicados em disco e um upload demorado pelo
-> navegador. A CLI lê o arquivo onde ele já está.
+> **A interface web envia uma cópia do arquivo.** Ela vai para uma pasta temporária
+> do sistema e é apagada ao fim — com sucesso, erro ou cancelamento —, mas numa
+> sessão de três horas são vários GB passando pelo navegador. A CLI lê o arquivo
+> onde ele já está.
 
 Se preferir ativar a venv em vez de chamar `.venv/bin/` a cada comando, rode
 `source .venv/bin/activate` e depois use só `transcritor`.
@@ -349,6 +370,8 @@ Duração: 187.4 min
 ```
 
 Se a faixa 1 não for o microfone do GM, inverta com `--faixa-gm 2 --faixa-grupo 1`.
+Com outra organização de trilhas, descreva cada uma com `--faixa` (veja a
+[seção 7](#mais-de-duas-faixas)).
 
 ### 4.2 Transcreva cinco minutos
 
@@ -397,19 +420,20 @@ campos do formulário.
 |---|---|---|
 | `-o, --saida` | `saida/<vídeo>` | Caminho base dos arquivos, *sem* extensão. Cada formato vira um arquivo. |
 | `-m, --modelo` | `preciso` | Apelido da [tabela de modelos](#6-modelos-de-fala), um tamanho do Whisper (`medium`), ou o caminho de um modelo baixado à mão. |
-| `--faixa-gm` | `1` | Qual trilha tem o microfone do GM. Contagem a partir de 1. |
-| `--faixa-grupo` | `2` | Qual trilha tem os jogadores. |
-| `--nome-gm` | `GM` | Rótulo de todas as falas da faixa 1. |
-| `-n, --jogadores` | `5` | Quantas vozes existem na faixa 2. Use `auto` para estimar — menos confiável. |
-| `--nomes` | — | Nomes separados por vírgula, na ordem da primeira fala de cada um. |
+| `--faixa` | GM + jogadores | Uma faixa: `'TRILHA; nomes=A,B; vozes=N; ajuste=S; arquivo=CAMINHO'`. Repita para cada faixa. Veja [Mais de duas faixas](#mais-de-duas-faixas). |
+| `--faixa-gm` | `1` | Atalho da mesa de duas faixas: qual trilha tem o microfone do GM. Contagem a partir de 1. |
+| `--faixa-grupo` | `2` | Atalho: qual trilha tem os jogadores. |
+| `--nome-gm` | `GM` | Atalho: rótulo de todas as falas da faixa do GM. |
+| `-n, --jogadores` | `5` | Atalho: quantas vozes existem na faixa dos jogadores. Use `auto` para estimar — menos confiável. |
+| `--nomes` | — | Atalho: nomes dos jogadores separados por vírgula, na ordem da primeira fala de cada um. |
 | `-f, --formatos` | todos | Subconjunto de `txt,csv,json,srt,vtt,md`. |
 | `--idioma` | `pt` | Idioma do áudio; `auto` deixa o modelo detectar. Também é o idioma de origem da tradução. |
 | `--contexto` | — | Nomes, lugares e jargão da mesa, em texto corrido. É o ajuste que mais reduz erro em nome próprio. |
 | `--dispositivo` | `auto` | `auto`, `cuda` ou `cpu`. Onde o Whisper roda. |
-| `--traduzir` | desligado | Gera também a versão traduzida, ex.: `en`. Única etapa que usa a internet. |
+| `--traduzir` | desligado | Gera também versões traduzidas, separadas por vírgula: `en,es` (offline) ou `google:ja` (online). Veja [Tradução](#tradução). |
 | `--inicio` | `0` | Segundo em que a transcrição começa. |
 | `--fim` | fim do vídeo | Segundo em que termina. |
-| `--deslocamento` | `0` | Move a faixa 2 no tempo, em segundos, para corrigir dessincronia. |
+| `--deslocamento` | `0` | Atalho: move a faixa dos jogadores no tempo, em segundos, para corrigir dessincronia. |
 | `--sem-juntar` | desligado | Mantém cada trecho reconhecido numa linha própria, sem agrupar falas seguidas. |
 
 ### Os outros comandos
@@ -418,6 +442,8 @@ campos do formulário.
 |---|---|
 | `transcritor diagnostico` | Mostra tudo que decide se uma transcrição vai funcionar: dispositivo, GPU, ffmpeg e modelos. É o primeiro comando a rodar quando algo dá errado. |
 | `transcritor faixas <arquivo>` | Lista as trilhas de áudio e a duração. |
+| `transcritor idiomas` | Lista os idiomas de tradução disponíveis agora, offline e online. |
+| `transcritor idiomas --instalar pt-es` | Baixa o modelo offline de um par de idiomas (~70 MB). |
 | `transcritor modelos` | Mostra os modelos disponíveis e quais já estão em cache. |
 | `transcritor modelos --baixar preciso` | Baixa um modelo antes de precisar dele. |
 | `transcritor web` | Sobe a interface no navegador. |
@@ -473,7 +499,19 @@ preferir essas palavras quando o áudio é ambíguo.
   --contexto "Campanha de Ravenloft. Strahd von Zarovich, Barovia, Ireena Kolyana, Vallaki. Termos: iniciativa, teste de resistência, ponto de inspiração."
 ```
 
-Na interface web é o campo **Contexto da mesa**.
+Na interface web é o campo **Contexto da mesa**, uma lista de termos: digite e
+tecle Enter. Os termos usados ficam salvos e são sugeridos nas próximas sessões; em
+**Gerenciar termos salvos** dá para apagar os que não servem mais. O histórico fica
+num arquivo JSON legível, na pasta de dados do usuário:
+
+| Sistema | Arquivo |
+|---|---|
+| Linux, WSL | `~/.local/share/transcritor-rpg/historico-contexto.json` |
+| Windows | `%APPDATA%\transcritor-rpg\historico-contexto.json` |
+| macOS | `~/Library/Application Support/transcritor-rpg/historico-contexto.json` |
+| Container | `dados/historico-contexto.json` (o volume `/app/dados`) |
+
+A variável `TRANSCRITOR_DADOS` troca essa pasta.
 
 Os nomes do GM e dos jogadores entram sozinhos, sem precisar repeti-los: o
 `--nome-gm` e o `--nomes` já são incluídos antes do seu texto.
@@ -508,6 +546,38 @@ Na prática, é mais fácil rodar uma vez sem nomes, abrir o Markdown, ver quem 
 `Jogador 1`, `Jogador 2` e assim por diante, e só então rodar de novo com os nomes
 na ordem certa. Se você passar menos nomes que o número de vozes, os que sobrarem
 continuam numerados.
+
+### Mais de duas faixas
+
+Cada `--faixa` descreve uma faixa, na ordem em que aparecem na transcrição. Com
+`vozes=` a faixa é de várias pessoas e passa pela separação de vozes; sem, é de
+uma pessoa só e aceita no máximo um nome.
+
+```bash
+# OBS com uma trilha por jogador e o Discord dos convidados na última
+.venv/bin/transcritor transcrever gravacao.mp4 \
+  --faixa '1; nomes=Mestre' \
+  --faixa '2; nomes=Ana' \
+  --faixa '3; nomes=Bruno' \
+  --faixa '4; nomes=Caio,Duda; vozes=2'
+
+# Craig: um arquivo por pessoa (a trilha conta dentro de cada arquivo)
+.venv/bin/transcritor transcrever mestre.flac \
+  --faixa '1; nomes=Mestre' \
+  --faixa '1; nomes=Ana; arquivo=ana.flac' \
+  --faixa '1; nomes=Bruno; arquivo=bruno.flac'
+
+# Mesa presencial com um microfone só
+.venv/bin/transcritor transcrever sala.m4a --faixa '1; vozes=auto'
+```
+
+Jogadores sem nome são numerados sem repetir entre faixas: se a faixa 2 tem
+`Jogador 1` e `Jogador 2`, a faixa 3 começa em `Jogador 3`. Nomes repetidos na
+mesma faixa (sem diferença de maiúsculas) contam uma vez só e geram um aviso.
+
+Na interface web, cada faixa é um cartão próprio, com **+ Adicionar faixa** e
+**Remover**. Com mais de três faixas, os cartões se recolhem para a página não
+virar um rolo.
 
 ### Trilhas invertidas
 
@@ -544,13 +614,36 @@ quando o destino é legenda —, use `--sem-juntar`.
 
 ### Tradução
 
-O `--traduzir en` gera, além dos arquivos normais, uma segunda leva com o sufixo do
-idioma. Linhas que a tradução não conseguir cobrir voltam no idioma original, e o
-número delas é informado ao final.
+O `--traduzir` gera, além dos arquivos normais, uma leva por idioma com o código no
+nome (`sessao-01.en.srt`). Só o texto é traduzido — o nome de quem fala, nunca.
+Linhas que a tradução não conseguir cobrir ficam no idioma original, no mesmo
+lugar, e o número delas é informado ao final.
 
-> Esta é a **única** etapa que sai da sua máquina: o texto é enviado ao Google
-> Tradutor. Todo o resto — extração de áudio, reconhecimento e separação de vozes —
-> roda offline.
+Há dois caminhos:
+
+| | Offline (padrão) | Online |
+|---|---|---|
+| Como pedir | `--traduzir en,es` | `--traduzir google:ja` |
+| Motor | Modelos do Argos Translate, no próprio computador | Google Tradutor |
+| O texto sai da máquina? | Não | Sim |
+| Idiomas | Os instalados — direto ou passando pelo inglês | ~130 |
+| Precisa de internet | Só para instalar o modelo | Sempre |
+
+`transcritor idiomas` mostra o que está disponível agora. Para instalar um idioma
+offline:
+
+```bash
+.venv/bin/transcritor idiomas --instalar pt-en   # ~70 MB
+.venv/bin/transcritor idiomas --instalar pt-es
+```
+
+Na interface web, o campo **Traduzir também para** lista só os idiomas que
+funcionam naquele momento: os instalados e, se o Google responder, os online,
+marcados como tal. Nenhum marcado é sem tradução.
+
+> A tradução offline é boa para entender o que foi dito, mas não conhece o jargão
+> de RPG — "rola iniciativa" pode virar "it's an initiative". Quando o texto
+> traduzido vai ser publicado, revise-o.
 
 ---
 
@@ -623,14 +716,20 @@ apagaria a interrupção da linha do tempo.
 | Interface | Caminho |
 |---|---|
 | Linha de comando | O que você passou em `-o`. Sem essa opção, `saida/<nome-do-vídeo>`, **relativo à pasta de onde o comando foi chamado**. |
-| Web | `dados/trabalhos/<código>/`, um diretório por envio, com a cópia do vídeo enviado ao lado das transcrições. |
+| Web | `saida/<nome-do-arquivo>-<data-hora>/`, uma pasta por transcrição. A página mostra o caminho completo ao terminar. `TRANSCRITOR_SAIDA` troca a pasta-base. |
 
 A página de resultado oferece cada arquivo para download, o que costuma ser a forma
 mais direta de tirá-los dali — principalmente se o navegador está noutra máquina.
 
-> **A pasta `dados/` só cresce.** Nada apaga os trabalhos antigos, e cada um guarda
-> uma cópia do vídeo — vários GB por sessão. Depois de baixar o que interessa,
-> `rm -rf dados/trabalhos/<código>`.
+> **Nada além do resultado fica no disco.** O arquivo enviado e os áudios
+> intermediários vivem numa pasta temporária do sistema (`transcritor-*`, em
+> `/tmp` ou `%TEMP%`), apagada ao fim da transcrição — com sucesso, erro ou
+> cancelamento. Se o computador desligar no meio, a sobra é apagada na próxima vez
+> que o transcritor iniciar. Uma transcrição cancelada ou com erro não deixa
+> resultado pela metade.
+>
+> Os trabalhos de versões anteriores, em `dados/trabalhos/`, não são apagados
+> automaticamente: remova-os à mão depois de conferir que não precisa deles.
 
 Rodando em container, esses mesmos caminhos ficam dentro dele e aparecem no host
 conforme os volumes montados:
