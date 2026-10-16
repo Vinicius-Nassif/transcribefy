@@ -408,16 +408,36 @@ def executar(
 
     origem = detectado or "pt"
     tradutores = _tradutores(config.traducoes, origem, config.diretorio_modelos, avisos)
-    acompanhar.avisar("Traduzindo" if tradutores else "Gravando os arquivos")
-    gerados = saida.escrever(
-        falas,
-        config.destino,
-        formatos=config.formatos,
-        idioma=origem,
-        traducoes=tradutores,
-        progresso=acompanhar.etapa("traducao", None),
-    )
-    acompanhar.concluir("final", "Concluído")
+    acompanhar.avisar("Gravando os arquivos")
+    gerados = saida.escrever(falas, config.destino, formatos=config.formatos, idioma=origem)
+    acompanhar.concluir("final")
+
+    # Daqui em diante a transcrição já está no disco, e a tradução é um extra:
+    # um tradutor que falha vira aviso, e um cancelamento para as traduções
+    # restantes sem apagar o que já foi gravado.
+    for feitas, (codigo, traduzir) in enumerate(tradutores):
+        idioma_nome = traducao.nome(codigo)
+        try:
+            acompanhar.avisar(f"Traduzindo para {idioma_nome}")
+        except Cancelado:
+            faltaram = ", ".join(traducao.nome(c) for c, _ in tradutores[feitas:])
+            avisos.append(
+                f"Cancelado durante a tradução: a transcrição foi mantida, sem as "
+                f"traduções para {faltaram}."
+            )
+            break
+        try:
+            traduzida = saida.escrever_traducao(
+                falas, config.destino, codigo, traduzir, config.formatos
+            )
+        except Exception as erro:  # noqa: BLE001 - a tradução nunca derruba a transcrição
+            avisos.append(f"A tradução para {idioma_nome} falhou e foi pulada: {erro}")
+        else:
+            gerados.arquivos.extend(traduzida.arquivos)
+            gerados.avisos.extend(traduzida.avisos)
+        acompanhar.concluir_parcial("traducao", (feitas + 1) / len(tradutores))
+    acompanhar.concluir_parcial("traducao", 1.0)
+    acompanhar.finalizar("Concluído")
     return Resultado(
         falas=falas,
         arquivos=gerados.arquivos,

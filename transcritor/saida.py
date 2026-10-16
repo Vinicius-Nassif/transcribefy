@@ -168,6 +168,25 @@ def _escrever_formatos(
     return arquivos
 
 
+def escrever_traducao(
+    falas: Sequence[Fala],
+    destino_base: Path,
+    codigo: str,
+    traduzir: Traduzir,
+    formatos: Sequence[str] = FORMATOS,
+) -> ArquivosGerados:
+    """Escreve uma tradução nos formatos pedidos (`sessao-01.en.srt` etc.).
+
+    Levanta a exceção do tradutor se ele falhar por inteiro; quem chama decide
+    se isso derruba a execução — no pipeline, nunca derruba.
+    """
+    traduzidas, avisos = traduzir_falas(falas, traduzir)
+    return ArquivosGerados(
+        arquivos=_escrever_formatos(traduzidas, Path(destino_base), f".{codigo}", formatos, codigo),
+        avisos=[f"{codigo}: {aviso}" for aviso in avisos],
+    )
+
+
 def escrever(
     falas: Sequence[Fala],
     destino_base: Path,
@@ -184,7 +203,9 @@ def escrever(
         formatos: subconjunto de `FORMATOS`.
         idioma: idioma de origem, gravado nos metadados.
         traducoes: pares (código do idioma, função de tradução). Cada um gera
-            os mesmos formatos com o código no nome (`sessao-01.en.srt`).
+            os mesmos formatos com o código no nome (`sessao-01.en.srt`). Uma
+            tradução que falha vira aviso e não leva junto a transcrição nem as
+            outras traduções.
         progresso: recebe a fração concluída, uma vez por tradução.
 
     Returns:
@@ -198,16 +219,20 @@ def escrever(
     resultado = ArquivosGerados()
     resultado.arquivos.extend(_escrever_formatos(falas, destino_base, "", formatos, idioma))
 
-    detalhado = destino_base.with_suffix(".detalhado.json")
+    # with_name, e não with_suffix: num nome com ponto ("sessao.01"), with_suffix
+    # trocaria o ".01" e o detalhado sairia com nome diferente dos outros.
+    detalhado = destino_base.with_name(f"{destino_base.name}.detalhado.json")
     detalhado.write_text(para_json_detalhado(falas), encoding="utf-8")
     resultado.arquivos.append(detalhado)
 
     for feitas, (codigo, traduzir) in enumerate(traducoes, start=1):
-        traduzidas, avisos = traduzir_falas(falas, traduzir)
-        resultado.avisos.extend(f"{codigo}: {aviso}" for aviso in avisos)
-        resultado.arquivos.extend(
-            _escrever_formatos(traduzidas, destino_base, f".{codigo}", formatos, codigo)
-        )
+        try:
+            traduzida = escrever_traducao(falas, destino_base, codigo, traduzir, formatos)
+        except Exception as erro:  # noqa: BLE001 - uma tradução não derruba o resto
+            resultado.avisos.append(f"A tradução para {codigo} falhou e foi pulada: {erro}")
+        else:
+            resultado.arquivos.extend(traduzida.arquivos)
+            resultado.avisos.extend(traduzida.avisos)
         if progresso is not None:
             progresso(feitas / len(traducoes))
     return resultado

@@ -90,6 +90,18 @@ class Acompanhamento:
 
         return avancar
 
+    def finalizar(self, mensagem: str) -> None:
+        """Último aviso, que não confere o cancelamento: o trabalho já terminou."""
+        self._mensagem = mensagem
+        if self._relatar is not None:
+            self._relatar(mensagem, self.fracao)
+
+    def concluir_parcial(self, chave: str, fracao: float) -> None:
+        """Avança uma etapa sem conferir o cancelamento nem avisar ninguém."""
+        with self._trava:
+            if chave in self._feito:
+                self._feito[chave] = max(self._feito[chave], min(1.0, fracao))
+
     def concluir(self, chave: str, mensagem: str | None = None) -> None:
         with self._trava:
             if chave in self._feito:

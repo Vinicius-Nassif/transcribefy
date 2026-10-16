@@ -170,3 +170,53 @@ def test_uma_leitura_por_arquivo(ambiente, tmp_path):
     )
     assert registro["leituras"] == 2
     assert sorted(registro["extraidas"]) == [("ana.flac", 0), ("sessao.mp4", 0), ("sessao.mp4", 1)]
+
+
+def com_tradutores(monkeypatch, funcoes: dict):
+    """Faz `traducao.tradutor` devolver as funções dadas, por código."""
+    from transcritor import traducao
+
+    monkeypatch.setattr(traducao, "tradutor", lambda valor, origem, diretorio=None: funcoes[valor])
+
+
+def test_tradutor_que_falha_nao_leva_a_transcricao_nem_as_outras(ambiente, monkeypatch):
+    video, destino, _ = ambiente
+
+    def quebra(textos):
+        raise RuntimeError("pacote corrompido")
+
+    com_tradutores(monkeypatch, {"en": quebra, "es": lambda textos: [t.upper() for t in textos]})
+    resultado = pipeline.executar(pipeline.Configuracao(
+        video=video, destino=destino, formatos=["txt"], traducoes=["en", "es"]
+    ))
+    nomes = {a.name for a in resultado.arquivos}
+    assert {"sessao.txt", "sessao.detalhado.json", "sessao.es.txt"} <= nomes
+    assert "sessao.en.txt" not in nomes
+    assert any("Inglês falhou" in a and "pacote corrompido" in a for a in resultado.avisos)
+
+
+def test_cancelar_durante_a_traducao_mantem_a_transcricao(ambiente, monkeypatch):
+    video, destino, _ = ambiente
+    cancelado = threading.Event()
+
+    def traduz_e_cancela(textos):
+        cancelado.set()  # o usuário cancela enquanto a primeira tradução roda
+        return list(textos)
+
+    com_tradutores(monkeypatch, {"en": traduz_e_cancela, "es": list})
+    resultado = pipeline.executar(
+        pipeline.Configuracao(video=video, destino=destino, formatos=["txt"],
+                              traducoes=["en", "es"]),
+        cancelado=cancelado,
+    )
+    assert destino.with_suffix(".txt").is_file()
+    assert destino.with_name("sessao.en.txt").is_file()
+    assert not destino.with_name("sessao.es.txt").exists()
+    assert any("Cancelado durante a tradução" in a and "Espanhol" in a for a in resultado.avisos)
+
+
+def test_nome_com_ponto_mantem_o_detalhado_junto_dos_outros(ambiente):
+    video, _, _ = ambiente
+    destino = video.parent / "saida" / "sessao.01"
+    resultado = pipeline.executar(pipeline.Configuracao(video=video, destino=destino, formatos=["txt"]))
+    assert {a.name for a in resultado.arquivos} == {"sessao.01.txt", "sessao.01.detalhado.json"}
