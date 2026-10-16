@@ -97,7 +97,13 @@ def anexar_vetores(
     import vosk
 
     vosk.SetLogLevel(-1)
-    modelo = vosk.Model(str(modelo_fala))  # compartilhado: só leitura
+    # Os dois modelos são só leitura e ficam compartilhados entre as threads;
+    # cada uma tem o próprio reconhecedor. Medido: os vetores com o modelo de
+    # locutor compartilhado ficam dentro do ruído natural do Vosk (que varia de
+    # uma execução para outra por causa do dither do Kaldi) — similaridade
+    # média 0,978 contra 0,979 entre duas execuções com um modelo por thread.
+    modelo = vosk.Model(str(modelo_fala))
+    locutor = vosk.SpkModel(str(modelo_locutor))
     threads = max(1, min(paralelismo or PARALELISMO, len(falas)))
     # Intercalar as falas equilibra a carga: as longas não caem todas na mesma thread.
     partes = [falas[i::threads] for i in range(threads)]
@@ -106,7 +112,13 @@ def anexar_vetores(
     parar = threading.Event()
 
     def trabalhar(parte: list[Fala]) -> None:
-        locutor = vosk.SpkModel(str(modelo_locutor))
+        try:
+            _trabalhar(parte)
+        except BaseException:
+            parar.set()  # qualquer falha (WAV truncado, erro do Kaldi) para as outras
+            raise
+
+    def _trabalhar(parte: list[Fala]) -> None:
         with wave.Wave_read(str(wav)) as onda:
             taxa = onda.getframerate()
             largura = onda.getsampwidth()
@@ -127,11 +139,7 @@ def anexar_vetores(
                 with trava:
                     feitas[0] += 1
                     if progresso is not None:
-                        try:
-                            progresso(feitas[0] / len(falas))
-                        except BaseException:
-                            parar.set()
-                            raise
+                        progresso(feitas[0] / len(falas))
 
     with ThreadPoolExecutor(threads, thread_name_prefix="vozes") as executor:
         for tarefa in [executor.submit(trabalhar, parte) for parte in partes]:

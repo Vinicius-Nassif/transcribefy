@@ -156,3 +156,31 @@ def test_cancelamento_no_progresso_para_todas_as_threads(tmp_path, vosk_falso):
             tmp_path / "a.wav", falas, tmp_path, tmp_path, progresso=cancela, paralelismo=4
         )
     assert sum(f.vetor_voz is not None for f in falas) < 60
+
+
+def test_erro_numa_thread_para_as_outras(tmp_path, vosk_falso, monkeypatch):
+    """Um trecho que quebra o Kaldi não pode deixar as outras threads rodando a faixa toda."""
+    wav_com_marcas(tmp_path / "a.wav", 200)
+    falas = [Fala(float(s), s + 0.5, "x", 0) for s in range(200)]
+    original = vozes._vetor_do_trecho
+
+    def quebra_no_trecho_7(reconhecedor, dados, largura):
+        if dados[0] == 7:
+            raise RuntimeError("erro do Kaldi")
+        return original(reconhecedor, dados, largura)
+
+    monkeypatch.setattr(vozes, "_vetor_do_trecho", quebra_no_trecho_7)
+    with pytest.raises(RuntimeError, match="Kaldi"):
+        vozes.anexar_vetores(tmp_path / "a.wav", falas, tmp_path, tmp_path, paralelismo=4)
+    assert sum(f.vetor_voz is not None for f in falas) < 100
+
+
+def test_o_modelo_de_locutor_e_carregado_uma_vez(tmp_path, vosk_falso, monkeypatch):
+    import sys
+
+    cargas = []
+    monkeypatch.setattr(sys.modules["vosk"], "SpkModel", lambda *_: cargas.append(1) or object())
+    wav_com_marcas(tmp_path / "a.wav", 20)
+    falas = [Fala(float(s), s + 0.5, "x", 0) for s in range(20)]
+    vozes.anexar_vetores(tmp_path / "a.wav", falas, tmp_path, tmp_path, paralelismo=4)
+    assert len(cargas) == 1
