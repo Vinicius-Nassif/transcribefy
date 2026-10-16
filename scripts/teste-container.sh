@@ -158,14 +158,11 @@ conferir "a página inicial responde" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORTA/" || true)"
 conferir "a API lista os modelos" '"apelido"' "$(curl -s "http://127.0.0.1:$PORTA/api/modelos" || true)"
 
-# O formulário manda 'fim' vazio quando não há corte; um 0 aqui significaria
-# "terminar no segundo zero" e o ffmpeg recusaria.
+# A página manda a configuração como JSON num campo só; o intervalo desligado
+# transcreve o arquivo inteiro.
 resposta="$(curl -s -X POST "http://127.0.0.1:$PORTA/api/trabalhos" \
-    -F "video=@$TRABALHO/midia/teste-2-faixas.mp4" \
-    -F "modelo=$MODELO" -F "faixa_gm=1" -F "faixa_grupo=2" -F "nome_gm=GM" \
-    -F "jogadores=2" -F "nomes=" -F "formatos=md,json" -F "idioma=pt" \
-    -F "traduzir=" -F "deslocamento=0" -F "inicio=0" -F "fim=" \
-    -F "sem_juntar=false" || true)"
+    -F "config={\"faixas\":[{\"trilha\":1,\"nomes\":[\"GM\"]},{\"trilha\":2,\"varias_pessoas\":true,\"vozes\":2}],\"modelo\":\"$MODELO\",\"formatos\":[\"md\",\"json\"],\"idioma\":\"pt\"}" \
+    -F "video=@$TRABALHO/midia/teste-2-faixas.mp4" || true)"
 trabalho_id="$(echo "$resposta" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
 if [ -z "$trabalho_id" ]; then
     falha "o envio do vídeo é aceito" "resposta: $(echo "$resposta" | cut -c1-160)"
@@ -179,9 +176,9 @@ else
         sleep 2
     done
     conferir "a transcrição conclui" "concluido" "${estado_trabalho:-sem resposta}${corpo:+ | $(echo "$corpo" | sed -n 's/.*"erro":"\([^"]*\)".*/\1/p')}"
-    [ -s "$TRABALHO/dados/trabalhos/$trabalho_id/teste-2-faixas.md" ] \
-        && ok "os arquivos do trabalho aparecem em dados/ no host" \
-        || falha "os arquivos do trabalho aparecem em dados/ no host" "nada em dados/trabalhos/$trabalho_id"
+    ls "$TRABALHO"/saida/teste-2-faixas-*/teste-2-faixas.md >/dev/null 2>&1 \
+        && ok "o resultado aparece em saida/ no host" \
+        || falha "o resultado aparece em saida/ no host" "nada em saida/teste-2-faixas-*/"
     conferir "o download do resultado funciona" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORTA/api/trabalhos/$trabalho_id/arquivos/teste-2-faixas.md" || true)"
     conferir "não dá para sair da pasta do trabalho" "404" \
