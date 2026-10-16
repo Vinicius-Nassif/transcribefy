@@ -689,6 +689,15 @@ function resumirIdiomas() {
   $("traducao-resumo").textContent = nomes.length ? nomes.join(", ") : "Sem tradução";
 }
 $("traducao-busca").addEventListener("input", desenharIdiomas);
+// Um <details> não fecha sozinho: clique fora ou Esc fecham a lista de idiomas.
+document.addEventListener("click", (e) => {
+  if ($("traducao").open && !$("traducao").contains(e.target)) $("traducao").open = false;
+});
+$("traducao").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("traducao").open) {
+    $("traducao").open = false; $("traducao").querySelector("summary").focus();
+  }
+});
 $("idioma").addEventListener("change", () => { carregarIdiomas(); salvarRascunho(); });
 $("modelo").addEventListener("change", salvarRascunho);
 
