@@ -202,14 +202,23 @@ class PalavraFalsa:
 
 
 class ModeloFalso:
-    def __init__(self):
+    """Detecta, por bloco, o idioma/confiança/fala da lista `deteccoes`."""
+
+    def __init__(self, deteccoes=None):
         self.prompts, self.linguas = [], []
+        self.deteccoes = deteccoes or []
 
     def transcribe(self, audio, language=None, initial_prompt=None, **_):
         self.prompts.append(initial_prompt)
         self.linguas.append(language)
         n = len(self.prompts)
-        info = type("Info", (), {"language": "pt"})()
+        idioma, confianca, fala = (
+            self.deteccoes[n - 1] if n <= len(self.deteccoes) else ("pt", 0.99, 100.0)
+        )
+        info = type("Info", (), {
+            "language": language or idioma, "language_probability": confianca,
+            "duration_after_vad": fala,
+        })()
         return iter([SegmentoFalso(0.5, 1.0, f"bloco {n}")]), info
 
 
@@ -232,3 +241,42 @@ def test_tempos_somam_o_inicio_do_bloco_e_todo_bloco_recebe_o_contexto(tmp_path,
     assert modelo.prompts == ["Strahd."] * 3
     assert modelo.linguas == [None, "pt", "pt"]  # detecta no primeiro e mantém
     assert fracoes == sorted(fracoes) and fracoes[-1] == 1.0
+
+
+def test_idioma_so_trava_quando_a_deteccao_e_confiavel(tmp_path, monkeypatch):
+    """Bloco 1 só música (palpite fraco em inglês): não pode valer para o resto."""
+    monkeypatch.setattr(_mw, "BLOCO_S", 2.0)
+    monkeypatch.setattr(_mw, "MARGEM_CORTE_S", 0.5)
+    modelo = ModeloFalso([("en", 0.41, 3.0), ("pt", 0.97, 90.0)])
+    monkeypatch.setattr(_mw, "_abrir_modelo", lambda *a: modelo)
+    monkeypatch.setattr(_mw, "escolher_dispositivo", lambda *_: ("cpu", "int8"))
+    gravar_wav(tmp_path / "a.wav", np.zeros(16000 * 5, dtype=np.float32), taxa=16000)
+    detectados = []
+    _mw.transcrever(tmp_path / "a.wav", tmp_path, idioma="auto",
+                    ao_detectar_idioma=detectados.append)
+    assert modelo.linguas == [None, None, "pt"]  # detecta de novo até ter confiança
+    assert detectados == ["pt"]
+
+
+def test_sem_deteccao_confiavel_vale_o_melhor_palpite(tmp_path, monkeypatch):
+    monkeypatch.setattr(_mw, "BLOCO_S", 2.0)
+    monkeypatch.setattr(_mw, "MARGEM_CORTE_S", 0.5)
+    modelo = ModeloFalso([("en", 0.40, 5.0), ("es", 0.60, 5.0), ("en", 0.30, 5.0)])
+    monkeypatch.setattr(_mw, "_abrir_modelo", lambda *a: modelo)
+    monkeypatch.setattr(_mw, "escolher_dispositivo", lambda *_: ("cpu", "int8"))
+    gravar_wav(tmp_path / "a.wav", np.zeros(16000 * 5, dtype=np.float32), taxa=16000)
+    detectados = []
+    _mw.transcrever(tmp_path / "a.wav", tmp_path, idioma="auto",
+                    ao_detectar_idioma=detectados.append)
+    assert modelo.linguas == [None, None, None]
+    assert detectados == ["es"]
+
+
+def test_idioma_informado_nao_detecta_nem_avisa(tmp_path, monkeypatch):
+    modelo = ModeloFalso()
+    monkeypatch.setattr(_mw, "_abrir_modelo", lambda *a: modelo)
+    monkeypatch.setattr(_mw, "escolher_dispositivo", lambda *_: ("cpu", "int8"))
+    gravar_wav(tmp_path / "a.wav", np.zeros(16000, dtype=np.float32), taxa=16000)
+    detectados = []
+    _mw.transcrever(tmp_path / "a.wav", tmp_path, idioma="pt", ao_detectar_idioma=detectados.append)
+    assert modelo.linguas == ["pt"] and detectados == []

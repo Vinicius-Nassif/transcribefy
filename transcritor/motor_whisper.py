@@ -51,6 +51,13 @@ JANELA_SILENCIO_S = 0.25
 # repassar a cauda fazia o Whisper pular minutos inteiros (similaridade 0,73),
 # enquanto o contexto sozinho ficou igual ao de bloco único (0,94 contra 0,93).
 
+# Com idioma "auto", o idioma detectado num bloco só passa a valer para os
+# seguintes com esta confiança e com pelo menos esta fala (depois do filtro de
+# voz). Um bloco que abre com música ou silêncio dá um palpite fraco; travá-lo
+# transcreveria a faixa inteira no idioma errado.
+CONFIANCA_IDIOMA = 0.8
+FALA_MINIMA_IDIOMA_S = 30.0
+
 # Taxa de amostragem que o Whisper espera — a mesma em que as faixas são extraídas.
 TAXA = 16_000
 
@@ -400,13 +407,14 @@ def transcrever(
         modelo: diretório do modelo Whisper convertido para CTranslate2.
         faixa: número da faixa de origem, apenas para rotular as falas.
         idioma: código do idioma do áudio; `None` ou "auto" deixa o modelo
-            detectar no primeiro bloco e mantém o detectado nos seguintes.
+            detectar. A detecção é refeita a cada bloco até sair confiável
+            (ver `CONFIANCA_IDIOMA`); daí em diante o idioma fica fixo.
         contexto: nomes próprios, termos e jargão da mesa. Entra como prompt
             inicial e enviesa a escolha das palavras parecidas.
         dispositivo: "auto", "cuda" ou "cpu".
         progresso: callback que recebe a fração concluída (0.0 a 1.0).
-        ao_detectar_idioma: recebe o código do idioma detectado no primeiro
-            bloco, quando `idioma` é "auto".
+        ao_detectar_idioma: recebe, ao fim, o idioma detectado (o confiável,
+            ou o palpite de maior confiança), quando `idioma` é "auto".
     """
     wav = Path(wav)
     if not wav.is_file():
@@ -416,6 +424,8 @@ def transcrever(
     modelo_aberto = _abrir_modelo(Path(modelo), dispositivo, precisao)
     duracao = _duracao(wav) or 1.0
     lingua = None if idioma in (None, "", "auto") else idioma
+    detectar = lingua is None
+    palpite: tuple[float, str | None] = (-1.0, None)
     prompt = contexto.strip() or None
 
     falas: list[Fala] = []
@@ -439,10 +449,15 @@ def transcrever(
         if progresso is not None:
             progresso(min(1.0, (deslocamento + len(audio) / TAXA) / duracao))
         if lingua is None:
-            lingua = info.language
-            if ao_detectar_idioma is not None:
-                ao_detectar_idioma(lingua)
+            confianca = float(info.language_probability or 0.0)
+            if confianca > palpite[0]:
+                palpite = (confianca, info.language)
+            fala = float(getattr(info, "duration_after_vad", 0.0) or 0.0)
+            if confianca >= CONFIANCA_IDIOMA and fala >= FALA_MINIMA_IDIOMA_S:
+                lingua = info.language
 
+    if detectar and ao_detectar_idioma is not None and (lingua or palpite[1]):
+        ao_detectar_idioma(lingua or palpite[1])
     if progresso is not None:
         progresso(1.0)
     return falas
