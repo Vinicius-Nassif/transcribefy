@@ -323,10 +323,14 @@ campanha e **5** modelo, idioma e tradução. Cada campo tem um **i** que explic
 que é e como preencher — pelo mouse, pelo teclado (Tab) ou com um toque. O
 formulário volta como estava da última vez, com as faixas e os nomes.
 
+![Formulário com três faixas, termos da campanha e a seleção de idiomas aberta](imagens/interface-formulario.png)
+
 Durante o processamento, a barra mostra a etapa, a porcentagem, o tempo decorrido
 e quanto falta. A estimativa aparece depois dos primeiros segundos e se ajusta ao
 ritmo real; no envio do arquivo, ela é a do upload. **Cancelar** interrompe tanto
 o envio quanto a transcrição, e apaga o que tiver sido gerado.
+
+![Barra de progresso com o tempo decorrido e o restante](imagens/interface-progresso.png)
 
 > **Por que `--host 0.0.0.0`?** Se você roda o projeto no WSL2 e abre o navegador no
 > Windows, ligar em `0.0.0.0` faz a aplicação responder tanto pelo `127.0.0.1`
