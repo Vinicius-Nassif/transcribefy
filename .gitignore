@@ -12,3 +12,4 @@ saida/
 .uploads/
 .env
 docker-compose.override.yml
+.medicoes/

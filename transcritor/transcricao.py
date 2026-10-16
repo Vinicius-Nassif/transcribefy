@@ -20,6 +20,8 @@ __all__ = [
     "SAMPLE_RATE",
     "Fala",
     "aviso_de_dispositivo",
+    "carregar",
+    "dispositivo_efetivo",
     "preparar_wav",
     "transcrever",
     "wav_valido",
@@ -40,6 +42,17 @@ def preparar_wav(origem: Path, destino: Path | None = None) -> Path:
     if wav_valido(Path(origem)):
         return Path(origem)
     return pytranscript.to_valid_wav(origem, destino)
+
+
+def dispositivo_efetivo(preferencia: str = "auto") -> str:
+    """Onde o Whisper vai rodar de fato: "cuda" ou "cpu"."""
+    return motor_whisper.escolher_dispositivo(preferencia)[0]
+
+
+def carregar(modelo: ModeloPronto, dispositivo: str = "auto") -> None:
+    """Deixa o modelo aberto na memória (só o Whisper tem carga demorada)."""
+    if modelo.motor == modelos.MOTOR_WHISPER:
+        motor_whisper.carregar(modelo.caminho, dispositivo)
 
 
 def aviso_de_dispositivo(modelo: ModeloPronto, preferencia: str = "auto") -> str:
@@ -66,6 +79,7 @@ def transcrever(
     dispositivo: str = "auto",
     modelo_locutor: Path | None = None,
     progresso: Progresso | None = None,
+    ao_detectar_idioma: Callable[[str], None] | None = None,
 ) -> list[Fala]:
     """Transcreve um WAV mono 16 kHz com o motor do modelo informado.
 
@@ -78,6 +92,8 @@ def transcrever(
         dispositivo: "auto", "cuda" ou "cpu"; usado só pelo Whisper.
         modelo_locutor: atalho do motor Vosk para já devolver os vetores de voz.
         progresso: callback que recebe a fração concluída (0.0 a 1.0).
+        ao_detectar_idioma: recebe o idioma detectado quando `idioma` é "auto"
+            (só o Whisper detecta; o Vosk é de um idioma só).
     """
     wav = Path(wav)
     if not wav.is_file():
@@ -93,4 +109,5 @@ def transcrever(
     return motor_whisper.transcrever(
         wav, modelo.caminho, faixa=faixa, idioma=idioma,
         contexto=contexto, dispositivo=dispositivo, progresso=progresso,
+        ao_detectar_idioma=ao_detectar_idioma,
     )

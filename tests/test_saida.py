@@ -88,26 +88,45 @@ def test_escrever_respeita_o_subconjunto_de_formatos(tmp_path):
     assert {c.name for c in gerados.arquivos} == {"s.srt", "s.detalhado.json"}
 
 
-def test_traducao_reinsere_as_linhas_que_falharam(monkeypatch, tmp_path):
+def test_traducao_reinsere_as_linhas_que_falharam(tmp_path):
     """Uma linha que a tradução não cobre volta no idioma original, sem sumir."""
-    import pytranscript
 
-    def traduzir_parcial(self, alvo):
-        traduzida = pytranscript.Transcript(time_end=self.time_end)
-        traduzida.append(self.time[0], "PT " + self.text[0])
-        traduzida.append(self.time[2], "PT " + self.text[2])
-        erro = pytranscript.LineError(self.time[1], self.text[1], RuntimeError("falhou"))
-        return traduzida, [erro]
+    def traduzir_parcial(textos):
+        return ["PT " + textos[0], None, "PT " + textos[2]]
 
-    monkeypatch.setattr(pytranscript.Transcript, "translate", traduzir_parcial)
     gerados = saida.escrever(
-        FALAS, tmp_path / "s", formatos=["srt"], traduzir_para="pt"
+        FALAS, tmp_path / "s", formatos=["srt"], traducoes=[("pt", traduzir_parcial)]
     )
     conteudo = (tmp_path / "s.pt.srt").read_text(encoding="utf-8")
-    assert "PT GM: abram a porta" in conteudo
+    assert "GM: PT abram a porta" in conteudo
     assert "Ana: eu abro" in conteudo          # preservada no original
     assert "00:00:06,000 --> 00:00:09,500" in conteudo  # e ainda alinhada no tempo
     assert gerados.avisos and "1 linha" in gerados.avisos[0]
+
+
+def test_o_nome_do_locutor_nunca_e_traduzido(tmp_path):
+    vistos = []
+
+    def traduzir(textos):
+        vistos.extend(textos)
+        return [t.upper() for t in textos]
+
+    saida.escrever(FALAS, tmp_path / "s", formatos=["txt"], traducoes=[("en", traduzir)])
+    assert vistos == ["abram a porta", "eu abro", "espera ai"]
+    assert "GM: ABRAM A PORTA" in (tmp_path / "s.en.txt").read_text(encoding="utf-8")
+
+
+def test_varias_traducoes_geram_um_conjunto_de_arquivos_cada(tmp_path):
+    def mesmo(textos):
+        return list(textos)
+
+    gerados = saida.escrever(
+        FALAS, tmp_path / "s", formatos=["txt", "md"],
+        traducoes=[("en", mesmo), ("es", mesmo)],
+    )
+    nomes = {c.name for c in gerados.arquivos}
+    assert {"s.en.txt", "s.en.md", "s.es.txt", "s.es.md"} <= nomes
+    assert FALAS[0].texto == "abram a porta"  # as falas originais não mudam
 
 
 def test_formato_desconhecido_e_recusado(tmp_path):

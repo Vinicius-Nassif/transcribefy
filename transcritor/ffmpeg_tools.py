@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -80,11 +81,29 @@ def _relatorio(video: Path) -> str:
     return saida
 
 
+@dataclass(slots=True)
+class Inspecao:
+    """O que o ffmpeg diz de um arquivo: as faixas de áudio e a duração."""
+
+    faixas: list[FaixaAudio]
+    duracao: float | None
+
+
+def inspecionar(video: Path) -> Inspecao:
+    """Faixas e duração numa leitura só do arquivo."""
+    relatorio = _relatorio(video)
+    return Inspecao(_faixas_do_relatorio(relatorio), _duracao_do_relatorio(relatorio))
+
+
 def listar_faixas_audio(video: Path) -> list[FaixaAudio]:
     """Lista as faixas de áudio do arquivo, na ordem em que o ffmpeg as expoe."""
+    return _faixas_do_relatorio(_relatorio(video))
+
+
+def _faixas_do_relatorio(relatorio: str) -> list[FaixaAudio]:
     faixas: list[FaixaAudio] = []
     ultima: FaixaAudio | None = None
-    for linha in _relatorio(video).splitlines():
+    for linha in relatorio.splitlines():
         m = _RE_STREAM.search(linha)
         if m:
             idioma = m.group("lang")
@@ -109,11 +128,74 @@ def listar_faixas_audio(video: Path) -> list[FaixaAudio]:
 
 def duracao_segundos(video: Path) -> float | None:
     """Duração total do arquivo em segundos, ou None se o ffmpeg não informar."""
-    m = _RE_DURACAO.search(_relatorio(video))
+    return _duracao_do_relatorio(_relatorio(video))
+
+
+def _duracao_do_relatorio(relatorio: str) -> float | None:
+    m = _RE_DURACAO.search(relatorio)
     if not m:
         return None
     horas, minutos, segundos = m.groups()
     return int(horas) * 3600 + int(minutos) * 60 + float(segundos)
+
+
+def extrair_faixas(
+    video: Path,
+    pedidos: Sequence[tuple[int, Path]],
+    inicio: float = 0.0,
+    fim: float | None = None,
+    cancelado: Callable[[], None] | None = None,
+) -> list[Path]:
+    """Extrai várias faixas numa leitura só do arquivo, como WAV mono 16 kHz.
+
+    Uma chamada do ffmpeg por faixa leria o vídeo inteiro N vezes — numa sessão de
+    três horas, N vezes mais de 10 GB. Aqui ele é lido uma vez e cada trilha vai
+    para o seu WAV (PCM 16 bits, o formato que os motores esperam).
+
+    Args:
+        video: arquivo de origem.
+        pedidos: pares (índice da trilha de áudio, 0 é a primeira; WAV a criar).
+        inicio: segundo em que o recorte começa.
+        fim: segundo em que o recorte termina; None vai até o final.
+        cancelado: chamado a cada fração de segundo enquanto o ffmpeg roda; se
+            levantar uma exceção, o ffmpeg é encerrado e a exceção segue adiante.
+    """
+    recorte = ["-ss", f"{inicio:.3f}"] if inicio else []
+    if fim is not None:
+        recorte += ["-to", f"{fim:.3f}"]
+    saidas: list[str] = []
+    for ordem, destino in pedidos:
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        saidas += [
+            "-map", f"0:a:{ordem}", "-vn", "-sn", "-dn",
+            "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(SAMPLE_RATE), str(destino),
+        ]
+    comando = [
+        localizar_ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
+        *recorte, "-i", str(video), *saidas,
+    ]
+    with subprocess.Popen(
+        comando, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        text=True, errors="replace",
+    ) as proc:
+        try:
+            while True:
+                try:
+                    _, erros = proc.communicate(timeout=0.25)
+                    break
+                except subprocess.TimeoutExpired:
+                    if cancelado is not None:
+                        cancelado()
+        except BaseException:
+            proc.kill()
+            raise
+    faltando = [ordem for ordem, destino in pedidos if not destino.exists()]
+    if proc.returncode != 0 or faltando:
+        trilhas = ", ".join(str(o + 1) for o, _ in pedidos)
+        raise RuntimeError(
+            f"Falha ao extrair a(s) faixa(s) de áudio {trilhas}:\n{(erros or '').strip()}"
+        )
+    return [destino for _, destino in pedidos]
 
 
 def extrair_faixa(
@@ -122,34 +204,7 @@ def extrair_faixa(
     destino: Path,
     inicio: float = 0.0,
     fim: float | None = None,
+    cancelado: Callable[[], None] | None = None,
 ) -> Path:
-    """Extrai uma faixa de áudio como WAV mono PCM 16 bits / 16 kHz (formato do Vosk).
-
-    Args:
-        video: arquivo de origem.
-        ordem: índice da faixa entre as faixas de áudio (0 é a primeira).
-        destino: caminho do WAV a criar.
-        inicio: segundo em que o recorte começa.
-        fim: segundo em que o recorte termina; None vai até o final.
-    """
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    recorte = ["-ss", f"{inicio:.3f}"] if inicio else []
-    if fim is not None:
-        recorte += ["-to", f"{fim:.3f}"]
-    comando = [
-        localizar_ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
-        *recorte,
-        "-i", str(video),
-        "-map", f"0:a:{ordem}",
-        "-vn", "-sn", "-dn",
-        "-acodec", "pcm_s16le",
-        "-ac", "1",
-        "-ar", str(SAMPLE_RATE),
-        str(destino),
-    ]
-    proc = subprocess.run(comando, capture_output=True, text=True, errors="replace")
-    if proc.returncode != 0 or not destino.exists():
-        raise RuntimeError(
-            f"Falha ao extrair a faixa de áudio {ordem + 1}:\n{proc.stderr.strip()}"
-        )
-    return destino
+    """Extrai uma faixa só (ver `extrair_faixas`)."""
+    return extrair_faixas(video, [(ordem, destino)], inicio, fim, cancelado)[0]

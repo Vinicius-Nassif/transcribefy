@@ -34,15 +34,30 @@ def test_estado_inicial_de_um_trabalho():
     assert trabalho["avisos"] == []
 
 
-def test_a_pagina_envia_todos_os_campos_do_formulario():
-    """Todo `name=` do formulário precisa existir como parâmetro do endpoint."""
-    import inspect
+def test_o_pedido_montado_pela_pagina_so_tem_campos_que_a_api_aceita():
+    """Toda chave do objeto de `montarPedido()` existe no modelo do pedido.
 
-    enviados = set(
-        re.findall(r'<(?:input|select|textarea)\b[^>]*?name="([a-z_]+)"', PAGINA)
+    O Pydantic ignora chaves desconhecidas em silêncio: um campo renomeado de um
+    lado só deixaria de chegar ao pipeline sem erro nenhum.
+    """
+    corpo = PAGINA[PAGINA.index("function montarPedido()"):]
+    corpo = corpo[: corpo.index("\n}\n")]
+    enviadas = set(re.findall(r"^\s*([a-z_]+):", corpo, flags=re.MULTILINE))
+    aceitas = set(web.Pedido.model_fields) | set(web.FaixaPedida.model_fields) | set(
+        web.IntervaloPedido.model_fields
     )
-    aceitos = set(inspect.signature(web.criar_trabalho).parameters)
-    assert enviados <= aceitos, enviados - aceitos
+    assert enviadas, "não achei as chaves do pedido na página"
+    assert enviadas <= aceitas, enviadas - aceitas
+
+
+def test_a_pagina_so_chama_rotas_que_existem():
+    chamadas = {
+        re.sub(r"\$\{[^}]+\}", "{x}", c).split("?")[0]
+        for c in re.findall(r"""[`"](/api/[^`"]+)[`"]""", PAGINA)
+    }
+    rotas = {re.sub(r"\{[^}]+\}", "{x}", r.path) for r in web.app.routes if hasattr(r, "path")}
+    assert chamadas, "não achei chamadas à API na página"
+    assert chamadas <= rotas, chamadas - rotas
 
 
 def test_o_script_de_inicio_do_windows_confere_um_campo_que_a_api_devolve():

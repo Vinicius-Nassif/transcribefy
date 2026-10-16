@@ -8,238 +8,899 @@
   :root {
     --fundo: #f6f6f4; --painel: #fff; --borda: #e2e1dd; --texto: #1c1b19;
     --suave: #6b6862; --destaque: #b8562f; --destaque-fraco: #f4e5dd;
-    --gm: #b8562f; --ok: #2f7d4f;
+    --ok: #2f7d4f; --erro: #b03a2e;
+    --f1: #b8562f; --f2: #2d6a9f; --f3: #6b4fa0; --f4: #2f7d4f;
+    --f5: #a0702d; --f6: #a03a6b; --f7: #3a8a8a; --f8: #6b6862;
+    --raio: 10px; --espaco: 16px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --fundo: #16150f; --painel: #201f19; --borda: #34322a; --texto: #eceae2;
       --suave: #9b978c; --destaque: #e08a5e; --destaque-fraco: #33251d;
-      --gm: #e08a5e; --ok: #6cc08a;
+      --ok: #6cc08a; --erro: #e2806f;
+      --f1: #e08a5e; --f2: #7fb2e0; --f3: #b49be0; --f4: #6cc08a;
+      --f5: #d9ad6a; --f6: #e08ab4; --f7: #76c9c9; --f8: #9b978c;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fundo); color: var(--texto);
     font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .envolucro { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+  .envolucro { max-width: 920px; margin: 0 auto; padding: 28px 16px 64px; }
   h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -.01em; }
-  .legenda { color: var(--suave); margin: 0 0 28px; }
+  .legenda { color: var(--suave); margin: 0 0 24px; }
   .cartao { background: var(--painel); border: 1px solid var(--borda);
-    border-radius: 12px; padding: 20px; margin-bottom: 18px; }
-  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-  label { display: block; font-size: .8rem; font-weight: 600; color: var(--suave);
-    text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
-  input, select, textarea { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
+    border-radius: 12px; padding: 20px; margin-bottom: var(--espaco); }
+  .secao > h2 { font-size: 1rem; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+  .secao > h2 .num { display: inline-grid; place-items: center; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--destaque-fraco); color: var(--destaque);
+    font-size: .8rem; flex: none; }
+  .secao > h2 .opcional { font-weight: 400; color: var(--suave); font-size: .85rem; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .campo { min-width: 0; }
+  .rotulo { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600;
+    color: var(--suave); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
+  input, select { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
     border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); }
   input[type=file] { padding: 8px; cursor: pointer; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--destaque); outline-offset: -1px; }
-  .dica { font-size: .78rem; color: var(--suave); margin-top: 4px; font-weight: 400;
-    text-transform: none; letter-spacing: 0; }
-  button { background: var(--destaque); color: #fff; border: 0; border-radius: 8px;
-    padding: 11px 22px; font: 600 15px/1 inherit; cursor: pointer; }
+  input[type=checkbox] { width: auto; }
+  input:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
+  input:focus-visible, select:focus-visible { outline-offset: -1px; }
+  .dica { font-size: .8rem; color: var(--suave); margin-top: 4px; }
+  .dica.erro, .erro-campo { color: var(--erro); }
+  button { font: inherit; cursor: pointer; border-radius: 8px; }
+  .primario { background: var(--destaque); color: #fff; border: 0; padding: 11px 22px; font-weight: 600; }
+  .secundario { background: transparent; color: var(--texto); border: 1px solid var(--borda); padding: 8px 14px; }
+  .secundario:hover { border-color: var(--destaque); color: var(--destaque); }
+  .perigo { color: var(--erro); }
   button:disabled { opacity: .5; cursor: not-allowed; }
-  .barra { height: 8px; border-radius: 4px; background: var(--borda); overflow: hidden; }
+  .oculto { display: none !important; }
+
+  /* Tooltip: botão "i" com descrição ligada por aria-describedby. */
+  .info { position: relative; display: inline-flex; }
+  .info > button { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--suave);
+    background: transparent; color: var(--suave); font: italic 600 11px/1 Georgia, serif;
+    padding: 0; display: grid; place-items: center; text-transform: none; }
+  .info > button:hover, .info > button[aria-expanded=true] { border-color: var(--destaque); color: var(--destaque); }
+  .info [role=tooltip] { position: absolute; z-index: 10; left: 50%; bottom: calc(100% + 8px);
+    transform: translateX(-50%); width: max-content; max-width: min(300px, 80vw);
+    background: var(--texto); color: var(--fundo); padding: 8px 11px; border-radius: 8px;
+    font-size: .82rem; font-weight: 400; line-height: 1.45; text-transform: none; letter-spacing: 0;
+    box-shadow: 0 4px 16px #0003; }
+  .info [role=tooltip][hidden] { display: none; }
+
+  /* Faixas */
+  .faixa { border: 1px solid var(--borda); border-left: 4px solid var(--cor, var(--destaque));
+    border-radius: var(--raio); margin-bottom: 12px; background: var(--fundo); }
+  .faixa > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex;
+    align-items: center; gap: 10px; }
+  .faixa > summary::-webkit-details-marker { display: none; }
+  .faixa > summary::before { content: "▸"; color: var(--suave); transition: transform .15s; }
+  .faixa[open] > summary::before { transform: rotate(90deg); }
+  .faixa .titulo { font-weight: 600; color: var(--cor); }
+  .faixa .resumo-faixa { color: var(--suave); font-size: .88rem; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .faixa .corpo { padding: 2px 14px 14px; display: grid; gap: 14px; }
+  .alternar { display: flex; align-items: center; gap: 10px; font-size: .92rem; cursor: pointer; }
+  input[type=checkbox].interruptor { appearance: none; width: 38px; height: 22px; border-radius: 11px; margin: 0;
+    background: var(--borda); position: relative; cursor: pointer; flex: none; padding: 0; border: 0;
+    transition: background .15s; }
+  input[type=checkbox].interruptor::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; transition: transform .15s; }
+  input[type=checkbox].interruptor:checked { background: var(--destaque); }
+  input[type=checkbox].interruptor:checked::after { transform: translateX(16px); }
+
+  /* Listas de nomes e termos */
+  .lista { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px;
+    border: 1px solid var(--borda); border-radius: 8px; background: var(--painel); min-height: 42px; }
+  .lista:focus-within { outline: 2px solid var(--destaque); outline-offset: -1px; }
+  .lista input { border: 0; background: transparent; padding: 4px 6px; flex: 1; min-width: 140px; width: auto; }
+  .lista input:focus-visible { outline: none; }
+  .ficha { display: inline-flex; align-items: center; gap: 4px; background: var(--destaque-fraco);
+    border-radius: 999px; padding: 3px 4px 3px 11px; font-size: .88rem; max-width: 100%; }
+  .ficha span { overflow-wrap: anywhere; }
+  .ficha button { border: 0; background: transparent; color: var(--suave); width: 22px; height: 22px;
+    border-radius: 50%; padding: 0; line-height: 1; font-size: 1rem; }
+  .ficha button:hover { color: var(--erro); background: var(--painel); }
+  .acoes-linha { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+  /* Seletor múltiplo de idiomas */
+  .multi > summary { list-style: none; cursor: pointer; padding: 9px 11px; border: 1px solid var(--borda);
+    border-radius: 8px; background: var(--fundo); display: flex; justify-content: space-between; gap: 8px; }
+  .multi > summary::-webkit-details-marker { display: none; }
+  .multi > summary::after { content: "▾"; color: var(--suave); }
+  .multi .painel { border: 1px solid var(--borda); border-radius: 8px; margin-top: 6px; padding: 8px;
+    background: var(--painel); }
+  .multi .opcoes { max-height: 260px; overflow-y: auto; margin-top: 8px; }
+  .multi fieldset { border: 0; margin: 0 0 8px; padding: 0; }
+  .multi legend { font-size: .75rem; font-weight: 600; color: var(--suave); text-transform: uppercase;
+    letter-spacing: .04em; padding: 4px 2px; }
+  .multi label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+  .multi label:hover { background: var(--fundo); }
+
+  /* Progresso e resultado */
+  .barra { height: 10px; border-radius: 5px; background: var(--borda); overflow: hidden; }
   .barra > i { display: block; height: 100%; width: 0; background: var(--destaque);
     transition: width .35s ease; }
-  .linha-estado { display: flex; justify-content: space-between; gap: 12px;
-    margin-bottom: 10px; font-size: .9rem; }
+  .linha-estado { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .tempos { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px;
+    margin-top: 10px; font-size: .88rem; color: var(--suave); font-variant-numeric: tabular-nums; }
+  .tempos b { color: var(--texto); }
   .arquivos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .arquivos a { border: 1px solid var(--borda); border-radius: 999px; padding: 5px 13px;
     font-size: .85rem; text-decoration: none; color: var(--texto); background: var(--fundo); }
   .arquivos a:hover { border-color: var(--destaque); color: var(--destaque); }
   .previa { max-height: 380px; overflow-y: auto; margin-top: 14px; border-top: 1px solid var(--borda); }
-  .fala { display: grid; grid-template-columns: 62px 110px 1fr; gap: 10px;
+  .fala { display: grid; grid-template-columns: 62px 120px 1fr; gap: 10px;
     padding: 7px 2px; border-bottom: 1px solid var(--borda); font-size: .88rem; }
   .fala time { color: var(--suave); font-variant-numeric: tabular-nums; }
-  .fala b { font-weight: 600; overflow-wrap: anywhere; }
-  .fala.faixa1 b { color: var(--gm); }
-  .erro { border-color: #c04a3a; background: var(--destaque-fraco); }
-  .oculto { display: none; }
+  .fala b { font-weight: 600; overflow-wrap: anywhere; color: var(--cor); }
+  .erro { border-color: var(--erro); background: var(--destaque-fraco); }
   .aviso { font-size: .85rem; color: var(--suave); margin-top: 10px; }
   .resumo { display: flex; flex-wrap: wrap; gap: 18px; font-size: .88rem; color: var(--suave); }
   .resumo b { color: var(--texto); }
-  @media (max-width: 560px) { .fala { grid-template-columns: 54px 1fr; }
-    .fala b { grid-column: 2; } .fala span { grid-column: 2; } }
+  .rodape-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  @media (max-width: 560px) {
+    .cartao { padding: 16px; }
+    .fala { grid-template-columns: 54px 1fr; }
+    .fala b, .fala span { grid-column: 2; }
+  }
 </style>
 </head>
 <body>
 <div class="envolucro">
   <h1>Transcritor de Sessões</h1>
-  <p class="legenda">Envie a gravação do OBS em MP4 com duas faixas de áudio.
-    A faixa 1 vira o GM; a faixa 2 é separada por voz entre os jogadores.</p>
+  <p class="legenda">Envie a gravação da mesa, diga quem fala em cada faixa de áudio e receba
+    uma transcrição única, com cada fala no nome de quem falou.</p>
 
-  <div id="alerta-ffmpeg" class="cartao erro oculto"></div>
+  <div id="alerta-ffmpeg" class="cartao erro oculto" role="alert"></div>
 
-  <form id="formulario" class="cartao">
-    <label for="video">Vídeo (MP4 com 2 faixas)</label>
-    <input type="file" id="video" name="video" accept="video/*,audio/*" required>
+  <form id="formulario" novalidate>
+    <!-- 1. Gravação -->
+    <section class="cartao secao" aria-labelledby="t-gravacao">
+      <h2 id="t-gravacao"><span class="num">1</span> Gravação</h2>
+      <div class="campo">
+        <div class="rotulo"><label for="video">Arquivo da sessão</label>
+          <span class="info" data-dica="O arquivo gravado pelo OBS (MP4 ou MKV), com as vozes em trilhas de áudio separadas. Ex.: sessao-12.mp4"></span></div>
+        <input type="file" id="video" accept="video/*,audio/*" required>
+        <div class="dica" id="video-dica" aria-live="polite"></div>
+      </div>
+    </section>
 
-    <div class="grade" style="margin-top:18px">
-      <div>
-        <label for="modelo">Modelo de reconhecimento</label>
-        <select id="modelo" name="modelo"></select>
+    <!-- 2. Faixas -->
+    <section class="cartao secao" aria-labelledby="t-faixas">
+      <h2 id="t-faixas"><span class="num">2</span> Faixas de áudio
+        <span class="info" data-dica="Cada faixa é um microfone. Diga quem fala nela: uma pessoa só (ex.: o mestre) ou várias, que serão separadas pela voz."></span></h2>
+      <div id="faixas"></div>
+      <div class="acoes-linha">
+        <button type="button" class="secundario" id="adicionar-faixa">+ Adicionar faixa</button>
+        <span class="dica" id="faixas-dica"></span>
       </div>
-      <div>
-        <label for="nome_gm">Nome do GM</label>
-        <input id="nome_gm" name="nome_gm" value="GM">
+    </section>
+
+    <!-- 3. Trecho -->
+    <section class="cartao secao" aria-labelledby="t-trecho">
+      <h2 id="t-trecho"><span class="num">3</span> Trecho <span class="opcional">— opcional</span></h2>
+      <label class="alternar">
+        <input type="checkbox" class="interruptor" id="trecho-ativo" role="switch" aria-controls="trecho-campos">
+        Transcrever só um trecho
+        <span class="info" data-dica="Útil para testar os nomes e ajustes em poucos minutos antes de transcrever a sessão inteira. Desligado, o arquivo todo é transcrito."></span>
+      </label>
+      <div class="grade" id="trecho-campos" style="margin-top:14px">
+        <div class="campo">
+          <div class="rotulo"><label for="inicio">A partir de (s)</label>
+            <span class="info" data-dica="Segundo em que o trecho começa. Ex.: 600 = 10 minutos."></span></div>
+          <input id="inicio" type="number" min="0" step="1" value="0" inputmode="numeric">
+          <div class="dica" id="inicio-dica"></div>
+        </div>
+        <div class="campo">
+          <div class="rotulo"><label for="fim">Até (s)</label>
+            <span class="info" data-dica="Segundo em que o trecho termina. Precisa ser depois do início e dentro da duração do arquivo. Ex.: 900 = 15 minutos."></span></div>
+          <input id="fim" type="number" min="1" step="1" inputmode="numeric">
+          <div class="dica" id="fim-dica" aria-live="polite"></div>
+        </div>
       </div>
-      <div>
-        <label for="jogadores">Locutores na faixa 2</label>
-        <input id="jogadores" name="jogadores" value="5">
-        <div class="dica">Use <code>auto</code> para estimar</div>
+    </section>
+
+    <!-- 4. Contexto -->
+    <section class="cartao secao" aria-labelledby="t-contexto">
+      <h2 id="t-contexto"><span class="num">4</span> Contexto da mesa <span class="opcional">— opcional</span></h2>
+      <div class="campo">
+        <div class="rotulo"><label for="contexto-entrada">Termos da campanha</label>
+          <span class="info" data-dica="Nomes de personagens, lugares e termos do jogo. É onde o reconhecimento mais erra. Digite e tecle Enter. Ex.: Strahd, Barovia, iniciativa. Os nomes das faixas já entram sozinhos."></span></div>
+        <div class="lista" id="contexto-lista">
+          <input id="contexto-entrada" list="contexto-sugestoes" autocomplete="off"
+            placeholder="Digite um termo e tecle Enter" aria-describedby="contexto-dica">
+        </div>
+        <datalist id="contexto-sugestoes"></datalist>
+        <div class="dica" id="contexto-dica">Termos usados antes aparecem como sugestão.</div>
+        <details style="margin-top:8px" id="historico">
+          <summary class="dica" style="cursor:pointer">Gerenciar termos salvos</summary>
+          <div class="lista" id="historico-lista" style="margin-top:6px" aria-label="Termos salvos"></div>
+        </details>
       </div>
-      <div>
-        <label for="faixa_gm">Faixa do GM</label>
-        <input id="faixa_gm" name="faixa_gm" type="number" min="1" value="1">
+    </section>
+
+    <!-- 5. Reconhecimento e tradução -->
+    <section class="cartao secao" aria-labelledby="t-saida">
+      <h2 id="t-saida"><span class="num">5</span> Reconhecimento e tradução</h2>
+      <div class="grade">
+        <div class="campo">
+          <div class="rotulo"><label for="modelo">Modelo</label>
+            <span class="info" data-dica="Preciso: o melhor texto, ideal com placa de vídeo NVIDIA. Rápido: quase igual e bem mais veloz. Leve: para computadores sem placa de vídeo."></span></div>
+          <select id="modelo"></select>
+        </div>
+        <div class="campo">
+          <div class="rotulo"><label for="idioma">Idioma falado</label>
+            <span class="info" data-dica="O idioma da sessão. “Detectar” descobre sozinho, mas escolher é mais confiável."></span></div>
+          <select id="idioma">
+            <option value="pt" selected>Português</option>
+            <option value="en">Inglês</option>
+            <option value="es">Espanhol</option>
+            <option value="fr">Francês</option>
+            <option value="de">Alemão</option>
+            <option value="it">Italiano</option>
+            <option value="ja">Japonês</option>
+            <option value="auto">Detectar</option>
+          </select>
+        </div>
+        <div class="campo">
+          <div class="rotulo"><span id="traducao-rotulo">Traduzir também para</span>
+            <span class="info" data-dica="Gera uma cópia traduzida da transcrição. Offline: o texto não sai do computador. Online: usa o Google e precisa de internet. Nenhum marcado: sem tradução."></span></div>
+          <details class="multi" id="traducao">
+            <summary aria-labelledby="traducao-rotulo traducao-resumo"><span id="traducao-resumo">Sem tradução</span></summary>
+            <div class="painel">
+              <input type="search" id="traducao-busca" placeholder="Buscar idioma" aria-label="Buscar idioma">
+              <div class="opcoes" id="traducao-opcoes"></div>
+              <div class="dica" id="traducao-dica"></div>
+            </div>
+          </details>
+        </div>
       </div>
-      <div>
-        <label for="faixa_grupo">Faixa dos jogadores</label>
-        <input id="faixa_grupo" name="faixa_grupo" type="number" min="1" value="2">
-      </div>
-      <div>
-        <label for="deslocamento">Ajuste da faixa 2 (s)</label>
-        <input id="deslocamento" name="deslocamento" type="number" step="0.1" value="0">
-      </div>
-      <div>
-        <label for="inicio">Transcrever a partir de (s)</label>
-        <input id="inicio" name="inicio" type="number" step="1" min="0" value="0">
-      </div>
-      <div>
-        <label for="fim">Até (s)</label>
-        <input id="fim" name="fim" type="number" step="1" min="0" placeholder="fim do vídeo">
-        <div class="dica">Recorte curto para testar os ajustes antes da sessão inteira</div>
-      </div>
+    </section>
+
+    <div class="cartao rodape-form">
+      <span class="dica" id="aviso-tempo"></span>
+      <button class="primario" id="enviar" type="submit">Transcrever</button>
     </div>
-
-    <div style="margin-top:14px">
-      <label for="nomes">Nomes dos jogadores (opcional)</label>
-      <input id="nomes" name="nomes" placeholder="Ana, Bruno, Caio, Duda, Edu">
-      <div class="dica">Na ordem em que falam pela primeira vez. Em branco vira “Jogador 1…5”.</div>
-    </div>
-
-    <div style="margin-top:14px">
-      <label for="contexto">Contexto da mesa (opcional)</label>
-      <textarea id="contexto" name="contexto" rows="2"
-        placeholder="Campanha de Ravenloft. Strahd von Zarovich, Barovia, Ireena. Termos: iniciativa, teste de resistência."></textarea>
-      <div class="dica">
-        Nomes próprios, lugares e jargão que aparecem na sessão. É onde o
-        reconhecimento mais erra — citá-los aqui corrige a maioria. Os nomes do
-        GM e dos jogadores já entram sozinhos.
-      </div>
-    </div>
-
-    <div class="grade" style="margin-top:14px">
-      <div>
-        <label for="idioma">Idioma do áudio</label>
-        <input id="idioma" name="idioma" value="pt">
-      </div>
-      <div>
-        <label for="traduzir">Traduzir também para</label>
-        <input id="traduzir" name="traduzir" placeholder="en (opcional)">
-      </div>
-    </div>
-
-    <p style="margin:20px 0 0"><button id="enviar" type="submit">Transcrever</button></p>
-    <p class="aviso" id="aviso-tempo"></p>
+    <div id="erro-formulario" class="cartao erro oculto" role="alert"></div>
   </form>
 
-  <div id="painel-estado" class="cartao oculto">
-    <div class="linha-estado"><span id="mensagem">Enviando…</span><b id="percentual">0%</b></div>
-    <div class="barra"><i id="preenchimento"></i></div>
+  <section id="painel-estado" class="cartao oculto" aria-labelledby="mensagem">
+    <div class="linha-estado"><span id="mensagem" aria-live="polite">Enviando…</span><b id="percentual">0%</b></div>
+    <div class="barra" role="progressbar" id="barra" aria-labelledby="mensagem"
+      aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="preenchimento"></i></div>
+    <div class="tempos">
+      <span>Decorrido: <b id="decorrido">0s</b></span>
+      <span id="restante" aria-live="polite">Calculando o tempo restante…</span>
+      <button type="button" class="secundario perigo" id="cancelar">Cancelar</button>
+    </div>
     <div id="detalhe-erro" class="aviso"></div>
-  </div>
+  </section>
 
-  <div id="painel-resultado" class="cartao oculto">
+  <section id="painel-resultado" class="cartao oculto" aria-label="Resultado">
     <div class="resumo">
       <span><b id="r-falas">0</b> falas</span>
       <span><b id="r-duracao">0</b> min</span>
       <span>Locutores: <b id="r-locutores">—</b></span>
     </div>
     <div class="arquivos" id="r-arquivos"></div>
+    <p class="aviso" id="r-pasta"></p>
     <div class="previa" id="r-previa"></div>
     <p class="aviso" id="r-nota"></p>
-  </div>
+  </section>
 </div>
 
-<script>
-const $ = (id) => document.getElementById(id);
-let sondagem = null;
+<template id="modelo-faixa">
+  <details class="faixa" open>
+    <summary><span class="titulo"></span><span class="resumo-faixa"></span>
+      <button type="button" class="secundario perigo remover" style="padding:4px 10px">Remover</button></summary>
+    <div class="corpo">
+      <div class="grade">
+        <div class="campo">
+          <div class="rotulo"><label data-para="trilha">Trilha no arquivo</label>
+            <span class="info" data-dica="Qual trilha de áudio do arquivo é este microfone. No OBS, é o número marcado em Configurações › Saída › Gravação › Trilhas de áudio."></span></div>
+          <select data-campo="trilha"></select>
+        </div>
+        <div class="campo">
+          <div class="rotulo"><label data-para="ajuste">Ajuste de sincronia (s)</label>
+            <span class="info" data-dica="Use só se as falas desta faixa saírem adiantadas ou atrasadas em relação às outras. Ex.: 0,3 atrasa esta faixa em 0,3 s."></span></div>
+          <input data-campo="ajuste" type="number" step="0.1" value="0" inputmode="decimal">
+        </div>
+      </div>
+      <label class="alternar">
+        <input type="checkbox" class="interruptor" data-campo="outro_arquivo" role="switch">
+        Esta faixa está em outro arquivo
+        <span class="info" data-dica="Ligue se este microfone foi gravado num arquivo separado, como no Craig (um arquivo por pessoa). Aí a trilha é contada dentro desse arquivo."></span>
+      </label>
+      <div class="campo oculto" data-bloco="arquivo">
+        <div class="rotulo"><label data-para="arquivo">Arquivo desta faixa</label></div>
+        <input type="file" data-campo="arquivo" accept="video/*,audio/*">
+      </div>
+      <label class="alternar">
+        <input type="checkbox" class="interruptor" data-campo="varias_pessoas" role="switch">
+        Mais de uma pessoa fala nesta faixa
+        <span class="info" data-dica="Ligue se várias pessoas usam este microfone (ex.: o retorno do Discord). A transcrição separa quem é quem pela voz."></span>
+      </label>
+      <div class="campo">
+        <div class="rotulo"><label data-para="nomes" data-texto-um="Nome de quem fala" data-texto-varios="Nomes de quem fala"></label>
+          <span class="info" data-dica-um="Como esta pessoa aparece na transcrição. Ex.: Mestre. Em branco, vira o nome da faixa."
+            data-dica-varios="Na ordem em que cada um fala pela primeira vez. Opcional: sem nomes, viram “Jogador 1, 2…”. Digite e tecle Enter."></span></div>
+        <div class="lista" data-lista="nomes"><input data-campo="nomes" autocomplete="off"></div>
+        <div class="dica" data-dica-nomes aria-live="polite"></div>
+      </div>
+      <div class="campo" data-bloco="vozes">
+        <div class="rotulo"><label data-para="vozes">Quantas pessoas falam</label>
+          <span class="info" data-dica="Quantas vozes diferentes há nesta faixa. Em branco, usa a quantidade de nomes; sem nomes, estima sozinho."></span></div>
+        <input data-campo="vozes" type="number" min="1" max="20" step="1" inputmode="numeric" style="max-width:180px">
+        <div class="dica" data-dica-vozes></div>
+      </div>
+    </div>
+  </details>
+</template>
 
-function tempo(segundos) {
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const ARMAZENAMENTO = "transcritor:formulario:v1";
+const TRILHAS = 8;
+let maxFaixas = 8, faixas = [], contexto = [], duracaoVideo = null, trabalhoAtual = null;
+let sondagem = null, falhasSeguidas = 0, envio = null, inicioEnvio = 0;
+let idiomasSelecionados = new Set();
+
+// --- Utilidades -------------------------------------------------------------
+function el(tag, props = {}, ...filhos) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const f of filhos) if (f != null) n.append(f);
+  return n;
+}
+function duracao(segundos) {
+  segundos = Math.max(0, Math.round(segundos));
+  const h = Math.floor(segundos / 3600), m = Math.floor((segundos % 3600) / 60), s = segundos % 60;
+  if (h) return `${h}h${String(m).padStart(2, "0")}`;
+  return m ? `${m}min${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+function relogio(segundos) {
   const m = Math.floor(segundos / 60), s = Math.floor(segundos % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
-
-async function carregarOpcoes() {
-  const dados = await (await fetch("/api/modelos")).json();
-  $("modelo").innerHTML = dados.modelos.map((m) =>
-    `<option value="${m.apelido}"${m.apelido === dados.modelo_padrao ? " selected" : ""}>` +
-    `${m.apelido} — ${m.descricao}${m.baixado ? "" : ` (baixa ~${m.tamanho_mb} MB na 1ª vez)`}</option>`
-  ).join("");
-  if (!dados.ffmpeg) {
-    const alerta = $("alerta-ffmpeg");
-    alerta.textContent = "ffmpeg não encontrado. Instale com “sudo apt install ffmpeg” " +
-      "ou “pip install imageio-ffmpeg” antes de enviar o vídeo.";
-    alerta.classList.remove("oculto");
+function semRepetidos(lista) {
+  const vistos = new Set(), unicos = [];
+  for (const item of lista) {
+    const limpo = item.trim().replace(/\s+/g, " "), chave = limpo.toLocaleLowerCase("pt-BR");
+    if (limpo && !vistos.has(chave)) { vistos.add(chave); unicos.push(limpo); }
   }
+  return unicos;
 }
+function ler(chave) { try { return JSON.parse(localStorage.getItem(chave)); } catch { return null; } }
+function gravar(chave, valor) { try { localStorage.setItem(chave, JSON.stringify(valor)); } catch {} }
 
-$("formulario").addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  const dados = new FormData($("formulario"));
-  dados.set("juntar", "true");
-  $("enviar").disabled = true;
-  $("painel-resultado").classList.add("oculto");
-  $("painel-estado").classList.remove("oculto");
-  $("detalhe-erro").textContent = "";
-  atualizar("Enviando o vídeo…", 0);
-
-  let resposta;
-  try {
-    resposta = await fetch("/api/trabalhos", { method: "POST", body: dados });
-  } catch (erro) {
-    return falhar("Não foi possível enviar o arquivo: " + erro.message);
-  }
-  if (!resposta.ok) {
-    const corpo = await resposta.json().catch(() => ({ detail: resposta.statusText }));
-    return falhar(corpo.detail);
-  }
-  const { id } = await resposta.json();
-  atualizar("Na fila…", 0.01);
-  sondagem = setInterval(() => acompanhar(id), 1200);
+// --- Tooltips: mouse, foco e toque; Esc fecha ---------------------------------
+let contadorDica = 0;
+function montarDica(span, texto) {
+  span.replaceChildren();
+  const id = `dica-${++contadorDica}`;
+  const balao = el("span", { role: "tooltip", id, text: texto }); balao.hidden = true;
+  const botao = el("button", { type: "button", "aria-label": "Ajuda", "aria-describedby": id,
+    "aria-expanded": "false", text: "i" });
+  const mostrar = (sim) => { balao.hidden = !sim; botao.setAttribute("aria-expanded", String(sim)); };
+  botao.addEventListener("mouseenter", () => mostrar(true));
+  botao.addEventListener("mouseleave", () => mostrar(false));
+  botao.addEventListener("focus", () => mostrar(true));
+  botao.addEventListener("blur", () => mostrar(false));
+  botao.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); mostrar(balao.hidden); });
+  botao.addEventListener("keydown", (e) => { if (e.key === "Escape") mostrar(false); });
+  span.append(botao, balao);
+}
+function montarDicas(raiz) {
+  raiz.querySelectorAll(".info[data-dica]").forEach((s) => montarDica(s, s.dataset.dica));
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelectorAll('[role=tooltip]').forEach((balao) => {
+    balao.hidden = true; balao.previousSibling?.setAttribute("aria-expanded", "false");
+  });
 });
 
-function atualizar(mensagem, fracao) {
-  $("mensagem").textContent = mensagem;
-  $("percentual").textContent = Math.round(fracao * 100) + "%";
-  $("preenchimento").style.width = (fracao * 100) + "%";
+// --- Lista de fichas (nomes, termos) ----------------------------------------
+function listaDeFichas(caixa, entrada, obter, definir, { limite = Infinity, aoMudar } = {}) {
+  function desenhar() {
+    caixa.querySelectorAll(".ficha").forEach((f) => f.remove());
+    for (const item of obter()) {
+      const ficha = el("span", { class: "ficha" }, el("span", { text: item }),
+        el("button", { type: "button", "aria-label": `Remover ${item}`, text: "×",
+          onclick: () => { definir(obter().filter((x) => x !== item)); desenhar(); aoMudar?.(); entrada.focus(); } }));
+      caixa.insertBefore(ficha, entrada);
+    }
+    entrada.disabled = obter().length >= limite;
+    entrada.placeholder = entrada.disabled ? "" : entrada.dataset.placeholder || "";
+  }
+  function adicionar() {
+    const novos = entrada.value.split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+    if (!novos.length) return;
+    const antes = obter().length;
+    const juntos = semRepetidos([...obter(), ...novos]).slice(0, limite);
+    const repetidos = antes + novos.length - juntos.length;
+    definir(juntos); entrada.value = ""; desenhar(); aoMudar?.(repetidos > 0 && juntos.length < limite);
+    entrada.focus();
+  }
+  entrada.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); adicionar(); }
+    else if (e.key === "Backspace" && !entrada.value && obter().length) {
+      definir(obter().slice(0, -1)); desenhar(); aoMudar?.();
+    }
+  });
+  entrada.addEventListener("change", () => { if (entrada.value.includes(",")) adicionar(); });
+  entrada.addEventListener("blur", adicionar);
+  caixa.addEventListener("click", (e) => { if (e.target === caixa) entrada.focus(); });
+  desenhar();
+  return { desenhar, adicionar };
 }
 
+// --- Faixas -----------------------------------------------------------------
+function novaFaixa(i) {
+  return i === 0 ? { trilha: 1, nomes: ["GM"], varias_pessoas: false, vozes: null, ajuste: 0 }
+    : i === 1 ? { trilha: 2, nomes: [], varias_pessoas: true, vozes: 5, ajuste: 0 }
+    : { trilha: Math.min(i + 1, TRILHAS), nomes: [], varias_pessoas: false, vozes: null, ajuste: 0 };
+}
+function resumoFaixa(f) {
+  const quem = f.varias_pessoas
+    ? `várias pessoas${f.nomes.length ? ": " + f.nomes.join(", ") : ""}`
+    : (f.nomes[0] || "uma pessoa");
+  return `trilha ${f.trilha}${f.arquivo ? " de " + f.arquivo.name : ""} · ${quem}`;
+}
+function desenharFaixas() {
+  const lista = $("faixas"); lista.replaceChildren();
+  const recolher = faixas.length > 3;
+  faixas.forEach((f, i) => lista.append(cartaoFaixa(f, i, recolher)));
+  $("adicionar-faixa").disabled = faixas.length >= maxFaixas;
+  $("faixas-dica").textContent = faixas.length >= maxFaixas
+    ? `Máximo de ${maxFaixas} faixas: cada uma é uma passada inteira do reconhecimento.` : "";
+  salvarRascunho();
+}
+function cartaoFaixa(f, i, recolher) {
+  const no = $("modelo-faixa").content.firstElementChild.cloneNode(true);
+  const q = (s) => no.querySelector(s);
+  no.style.setProperty("--cor", `var(--f${(i % 8) + 1})`);
+  if (recolher && f !== faixas[faixas.length - 1]) no.open = false;
+  q(".titulo").textContent = `Faixa ${i + 1}`;
+  const resumo = q(".resumo-faixa");
+  const atualizarResumo = () => { resumo.textContent = resumoFaixa(f); salvarRascunho(); };
+
+  // ids únicos para os rótulos
+  no.querySelectorAll("[data-campo]").forEach((c) => { c.id = `faixa${i}-${c.dataset.campo}`; });
+  no.querySelectorAll("label[data-para]").forEach((l) => { l.htmlFor = `faixa${i}-${l.dataset.para}`; });
+
+  const remover = q(".remover");
+  remover.disabled = faixas.length <= 1;
+  remover.title = faixas.length <= 1 ? "É preciso ao menos uma faixa" : "";
+  remover.setAttribute("aria-label", `Remover faixa ${i + 1}`);
+  remover.addEventListener("click", (e) => { e.preventDefault(); faixas.splice(i, 1); desenharFaixas(); });
+
+  const trilha = q('[data-campo=trilha]');
+  for (let t = 1; t <= TRILHAS; t++) trilha.append(el("option", { value: t, text: `Trilha ${t}` }));
+  trilha.value = f.trilha;
+  trilha.addEventListener("change", () => { f.trilha = Number(trilha.value); atualizarResumo(); validarFaixas(); });
+
+  const ajuste = q('[data-campo=ajuste]');
+  ajuste.value = f.ajuste || 0;
+  ajuste.addEventListener("input", () => { f.ajuste = Number(ajuste.value) || 0; salvarRascunho(); });
+
+  const outro = q('[data-campo=outro_arquivo]'), blocoArquivo = q('[data-bloco=arquivo]');
+  const arquivo = q('[data-campo=arquivo]');
+  outro.checked = !!f.arquivo; blocoArquivo.classList.toggle("oculto", !outro.checked);
+  outro.addEventListener("change", () => {
+    blocoArquivo.classList.toggle("oculto", !outro.checked);
+    if (!outro.checked) { f.arquivo = null; arquivo.value = ""; }
+    atualizarResumo(); validarFaixas();
+  });
+  arquivo.addEventListener("change", () => { f.arquivo = arquivo.files[0] || null; atualizarResumo(); validarFaixas(); });
+
+  const varias = q('[data-campo=varias_pessoas]'), blocoVozes = q('[data-bloco=vozes]');
+  const rotuloNomes = q('label[data-para=nomes]'), infoNomes = q('.info[data-dica-um]');
+  const entradaNomes = q('[data-campo=nomes]'), dicaNomes = q('[data-dica-nomes]');
+  const vozes = q('[data-campo=vozes]'), dicaVozes = q('[data-dica-vozes]');
+  vozes.value = f.vozes ?? "";
+  const atualizarVozes = () => {
+    dicaVozes.textContent = vozes.value ? ""
+      : f.nomes.length ? `Em branco: ${f.nomes.length} (um por nome).` : "Em branco: estima sozinho.";
+  };
+  vozes.addEventListener("input", () => {
+    f.vozes = vozes.value ? Math.max(1, Math.round(Number(vozes.value))) : null;
+    atualizarVozes(); salvarRascunho();
+  });
+
+  let lista;
+  const aplicarModo = () => {
+    const muitos = f.varias_pessoas;
+    varias.checked = muitos;
+    blocoVozes.classList.toggle("oculto", !muitos);
+    rotuloNomes.textContent = muitos ? rotuloNomes.dataset.textoVarios : rotuloNomes.dataset.textoUm;
+    montarDica(infoNomes, muitos ? infoNomes.dataset.dicaVarios : infoNomes.dataset.dicaUm);
+    entradaNomes.dataset.placeholder = muitos ? "Ex.: Ana — tecle Enter para adicionar" : "Ex.: Mestre";
+    if (!muitos && f.nomes.length > 1) {
+      dicaNomes.textContent = `Uma pessoa só: ficou “${f.nomes[0]}”.`;
+      f.nomes = f.nomes.slice(0, 1);
+    }
+    lista?.desenhar(); atualizarVozes(); atualizarResumo();
+  };
+  varias.addEventListener("change", () => { f.varias_pessoas = varias.checked; dicaNomes.textContent = ""; aplicarModo(); });
+  lista = listaDeFichas(q('[data-lista=nomes]'), entradaNomes, () => f.nomes,
+    (v) => { f.nomes = v; }, {
+      limite: Infinity,
+      aoMudar: (repetiu) => {
+        if (!f.varias_pessoas && f.nomes.length > 1) f.nomes = f.nomes.slice(-1);
+        lista?.desenhar();
+        dicaNomes.textContent = repetiu ? "Esse nome já está na lista desta faixa." : "";
+        atualizarVozes(); atualizarResumo(); validarFaixas();
+      },
+    });
+  aplicarModo();
+  montarDicas(no);
+  return no;
+}
+function validarFaixas() {
+  // Mesma trilha do mesmo arquivo em duas faixas é erro; o servidor confere de novo.
+  const vistos = new Map(); let erro = "";
+  faixas.forEach((f, i) => {
+    const chave = `${f.arquivo ? f.arquivo.name : ""}#${f.trilha}`;
+    if (vistos.has(chave)) erro = `As faixas ${vistos.get(chave) + 1} e ${i + 1} usam a mesma trilha.`;
+    else vistos.set(chave, i);
+    if (f.arquivo === undefined) f.arquivo = null;
+  });
+  // Um nome em duas faixas juntaria duas pessoas num locutor só; o servidor recusa.
+  const donos = new Map();
+  faixas.forEach((f, i) => {
+    for (const nome of semRepetidos(f.nomes)) {
+      const chave = nome.toLocaleLowerCase("pt-BR");
+      if (!donos.has(chave)) donos.set(chave, i);
+      else if (donos.get(chave) !== i && !erro)
+        erro = `O nome “${nome}” está nas faixas ${donos.get(chave) + 1} e ${i + 1}. Cada pessoa precisa de um nome só dela.`;
+    }
+  });
+  const sem = faixas.findIndex((f, i) => document.getElementById(`faixa${i}-outro_arquivo`)?.checked && !f.arquivo);
+  if (!erro && sem >= 0) erro = `Escolha o arquivo da faixa ${sem + 1}, ou desligue “outro arquivo”.`;
+  $("faixas-dica").textContent = erro || (faixas.length >= maxFaixas ? `Máximo de ${maxFaixas} faixas.` : "");
+  $("faixas-dica").classList.toggle("erro", !!erro);
+  return !erro;
+}
+$("adicionar-faixa").addEventListener("click", () => {
+  if (faixas.length >= maxFaixas) return;
+  faixas.push(novaFaixa(faixas.length)); desenharFaixas();
+  document.getElementById(`faixa${faixas.length - 1}-trilha`)?.focus();
+});
+
+// --- Trecho -----------------------------------------------------------------
+function aplicarTrecho() {
+  const ativo = $("trecho-ativo").checked;
+  for (const id of ["inicio", "fim"]) $(id).disabled = !ativo;
+  validarTrecho(); salvarRascunho();
+}
+function validarTrecho() {
+  const ativo = $("trecho-ativo").checked;
+  const inicio = Number($("inicio").value || 0), fim = $("fim").value === "" ? null : Number($("fim").value);
+  let erro = "";
+  if (ativo) {
+    if (inicio < 0) erro = "O início não pode ser negativo.";
+    else if (fim !== null && fim <= inicio) erro = "“Até” precisa ser depois de “a partir de”.";
+    else if (fim !== null && duracaoVideo && fim > duracaoVideo + 0.5)
+      erro = `“Até” passa da duração do arquivo (${Math.floor(duracaoVideo)} s).`;
+  }
+  $("fim-dica").textContent = erro || (ativo && fim === null ? "Em branco: até o fim do arquivo." : "");
+  $("fim-dica").classList.toggle("erro", !!erro);
+  $("fim").setAttribute("aria-invalid", String(!!erro));
+  $("inicio-dica").textContent = ativo && inicio ? `= ${relogio(inicio)}` : "";
+  return !erro;
+}
+$("trecho-ativo").addEventListener("change", aplicarTrecho);
+$("inicio").addEventListener("input", () => { validarTrecho(); salvarRascunho(); });
+$("fim").addEventListener("input", () => { validarTrecho(); salvarRascunho(); });
+
+// --- Arquivo principal --------------------------------------------------------
+$("video").addEventListener("change", () => {
+  const arquivo = $("video").files[0]; duracaoVideo = null;
+  $("video-dica").textContent = ""; $("aviso-tempo").textContent = "";
+  if (!arquivo) return;
+  const tamanho = `${(arquivo.size / 1e9).toFixed(2)} GB`;
+  $("video-dica").textContent = tamanho;
+  // A duração vem dos metadados, sem enviar nada: o navegador lê só o cabeçalho.
+  const midia = document.createElement("video"); midia.preload = "metadata";
+  const url = URL.createObjectURL(arquivo);
+  midia.onloadedmetadata = () => {
+    if (isFinite(midia.duration)) {
+      duracaoVideo = midia.duration;
+      $("video-dica").textContent = `${tamanho} · ${duracao(duracaoVideo)} de gravação`;
+      atualizarAvisoTempo(); validarTrecho();
+    }
+    URL.revokeObjectURL(url);
+  };
+  midia.onerror = () => URL.revokeObjectURL(url);
+  midia.src = url;
+});
+function atualizarAvisoTempo() {
+  if (!duracaoVideo) return;
+  // ~0,1 s por segundo de áudio por faixa na GPU (medido); a vista do usuário é a ordem de grandeza.
+  const estimado = duracaoVideo * 0.12 * faixas.length;
+  $("aviso-tempo").textContent = `Estimativa com placa de vídeo: cerca de ${duracao(estimado)} ` +
+    `para ${faixas.length} faixa(s). Sem placa, várias vezes mais.`;
+}
+
+// --- Contexto e histórico -----------------------------------------------------
+let historico = [];
+const listaContexto = listaDeFichas($("contexto-lista"), $("contexto-entrada"),
+  () => contexto, (v) => { contexto = v; }, { aoMudar: () => { salvarRascunho(); desenharSugestoes(); } });
+$("contexto-entrada").dataset.placeholder = "Digite um termo e tecle Enter";
+function desenharSugestoes() {
+  const usados = new Set(contexto.map((termo) => termo.toLocaleLowerCase("pt-BR")));
+  $("contexto-sugestoes").replaceChildren(...historico
+    .filter((termo) => !usados.has(termo.toLocaleLowerCase("pt-BR"))).map((termo) => el("option", { value: termo })));
+  const caixa = $("historico-lista");
+  caixa.replaceChildren(...historico.map((termo) => el("span", { class: "ficha" }, el("span", { text: termo }),
+    el("button", { type: "button", "aria-label": `Apagar ${termo} do histórico`, text: "×",
+      onclick: () => esquecer(termo) }))));
+  if (!historico.length) caixa.append(el("span", { class: "dica", text: "Nenhum termo salvo ainda." }));
+}
+async function carregarHistorico() {
+  try { historico = (await (await fetch("/api/historico/contexto")).json()).termos; } catch { historico = []; }
+  desenharSugestoes();
+}
+async function esquecer(termo) {
+  try {
+    const r = await fetch(`/api/historico/contexto?termo=${encodeURIComponent(termo)}`, { method: "DELETE" });
+    historico = (await r.json()).termos;
+  } catch {}
+  desenharSugestoes();
+}
+
+// --- Idiomas de tradução (seleção múltipla) -----------------------------------
+let idiomas = [];
+// O servidor manda os nomes do Google em inglês; o navegador sabe dizê-los em
+// português. Quando ele não conhece o código, fica o nome que veio do servidor.
+const nomesDeIdioma = (() => {
+  try { return new Intl.DisplayNames(["pt-BR"], { type: "language" }); } catch { return null; }
+})();
+function nomeEmPortugues(codigo, padrao) {
+  let nome = null;
+  try { nome = nomesDeIdioma?.of(codigo); } catch {}
+  if (!nome || nome.toLowerCase() === codigo.toLowerCase()) return padrao;
+  return nome.charAt(0).toLocaleUpperCase("pt-BR") + nome.slice(1);
+}
+const semAcento = (texto) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+async function carregarIdiomas() {
+  $("traducao-dica").textContent = "Carregando…";
+  try {
+    const r = await (await fetch(`/api/idiomas?origem=${$("idioma").value}`)).json();
+    idiomas = r.idiomas
+      .map((i) => ({ ...i, nome: nomeEmPortugues(i.valor.replace(/^google:/, ""), i.nome) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    const offline = idiomas.some((i) => i.servico === "offline");
+    $("traducao-dica").textContent = offline ? "" :
+      `Nenhum idioma offline instalado. Para instalar: ${r.instalar}`;
+  } catch { idiomas = []; $("traducao-dica").textContent = "Não foi possível listar os idiomas."; }
+  const validos = new Set(idiomas.map((i) => i.valor));
+  idiomasSelecionados = new Set([...idiomasSelecionados].filter((v) => validos.has(v)));
+  desenharIdiomas();
+}
+function desenharIdiomas() {
+  const busca = semAcento($("traducao-busca").value.trim());
+  const grupos = [["offline", "Offline — não sai do computador"], ["google", "Online — Google Tradutor"]];
+  const caixa = $("traducao-opcoes"); caixa.replaceChildren();
+  for (const [servico, titulo] of grupos) {
+    const itens = idiomas.filter((i) => i.servico === servico &&
+      (!busca || semAcento(i.nome).includes(busca) || i.valor.includes(busca)));
+    if (!itens.length) continue;
+    const grupo = el("fieldset", {}, el("legend", { text: titulo }));
+    for (const i of itens) {
+      const caixaSel = el("input", { type: "checkbox", value: i.valor });
+      caixaSel.checked = idiomasSelecionados.has(i.valor);
+      caixaSel.addEventListener("change", () => {
+        caixaSel.checked ? idiomasSelecionados.add(i.valor) : idiomasSelecionados.delete(i.valor);
+        resumirIdiomas(); salvarRascunho();
+      });
+      grupo.append(el("label", {}, caixaSel, el("span", { text: i.nome })));
+    }
+    caixa.append(grupo);
+  }
+  if (!caixa.children.length) caixa.append(el("p", { class: "dica", text: "Nenhum idioma encontrado." }));
+  resumirIdiomas();
+}
+function resumirIdiomas() {
+  const nomes = idiomas.filter((i) => idiomasSelecionados.has(i.valor))
+    .map((i) => i.nome + (i.servico === "google" ? " (online)" : ""));
+  $("traducao-resumo").textContent = nomes.length ? nomes.join(", ") : "Sem tradução";
+}
+$("traducao-busca").addEventListener("input", desenharIdiomas);
+// Um <details> não fecha sozinho: clique fora ou Esc fecham a lista de idiomas.
+document.addEventListener("click", (e) => {
+  if ($("traducao").open && !$("traducao").contains(e.target)) $("traducao").open = false;
+});
+$("traducao").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("traducao").open) {
+    $("traducao").open = false; $("traducao").querySelector("summary").focus();
+  }
+});
+$("idioma").addEventListener("change", () => { carregarIdiomas(); salvarRascunho(); });
+$("modelo").addEventListener("change", salvarRascunho);
+
+// --- Rascunho: o formulário volta como estava na última sessão ----------------
+function salvarRascunho() {
+  gravar(ARMAZENAMENTO, {
+    faixas: faixas.map(({ arquivo, ...f }) => f), contexto,
+    trecho: { ativo: $("trecho-ativo").checked, inicio: $("inicio").value, fim: $("fim").value },
+    modelo: $("modelo").value, idioma: $("idioma").value, traducoes: [...idiomasSelecionados],
+  });
+  atualizarAvisoTempo();
+}
+function restaurarRascunho() {
+  const r = ler(ARMAZENAMENTO);
+  faixas = (r?.faixas?.length ? r.faixas : [novaFaixa(0), novaFaixa(1)]).slice(0, maxFaixas)
+    .map((f) => ({ ...novaFaixa(2), ...f, arquivo: null }));
+  contexto = Array.isArray(r?.contexto) ? r.contexto : [];
+  if (r?.trecho) { $("trecho-ativo").checked = !!r.trecho.ativo; $("inicio").value = r.trecho.inicio ?? 0; $("fim").value = r.trecho.fim ?? ""; }
+  if (r?.idioma) $("idioma").value = r.idioma;
+  idiomasSelecionados = new Set(r?.traducoes || []);
+  return r;
+}
+
+// --- Envio ---------------------------------------------------------------------
+function montarPedido() {
+  const extras = [];
+  const pedido = {
+    faixas: faixas.map((f) => {
+      const nomes = semRepetidos(f.nomes);
+      let indice = null;
+      if (f.arquivo) { indice = extras.length; extras.push(f.arquivo); }
+      return {
+        trilha: f.trilha,
+        nomes: f.varias_pessoas ? nomes : nomes.slice(0, 1),
+        varias_pessoas: f.varias_pessoas,
+        vozes: f.varias_pessoas ? (f.vozes ?? (nomes.length || null)) : null,
+        ajuste: f.ajuste || 0,
+        arquivo: indice,
+      };
+    }),
+    modelo: $("modelo").value,
+    idioma: $("idioma").value,
+    traducoes: [...idiomasSelecionados],
+    contexto: semRepetidos(contexto),
+    intervalo: {
+      ativo: $("trecho-ativo").checked,
+      inicio: Number($("inicio").value || 0),
+      fim: $("fim").value === "" ? null : Number($("fim").value),
+    },
+  };
+  return { pedido, extras };
+}
+
+function mostrarErroFormulario(texto) {
+  $("erro-formulario").textContent = texto;
+  $("erro-formulario").classList.toggle("oculto", !texto);
+}
+
+$("formulario").addEventListener("submit", (evento) => {
+  evento.preventDefault();
+  listaContexto.adicionar();
+  if (!$("video").files[0]) { mostrarErroFormulario("Escolha o arquivo da sessão (passo 1)."); $("video").focus(); return; }
+  if (!validarFaixas()) { mostrarErroFormulario($("faixas-dica").textContent); return; }
+  if (!validarTrecho()) { mostrarErroFormulario($("fim-dica").textContent); $("fim").focus(); return; }
+  mostrarErroFormulario("");
+
+  const { pedido, extras } = montarPedido();
+  const dados = new FormData();
+  dados.append("config", JSON.stringify(pedido)); // primeiro: o servidor lê antes dos arquivos
+  dados.append("video", $("video").files[0]);
+  for (const arquivo of extras) dados.append("arquivos", arquivo);
+
+  iniciarAcompanhamento();
+  // XMLHttpRequest, e não fetch, porque só ele informa o progresso do upload.
+  envio = new XMLHttpRequest(); inicioEnvio = performance.now();
+  envio.open("POST", "/api/trabalhos");
+  envio.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const fracao = e.loaded / e.total, passou = (performance.now() - inicioEnvio) / 1000;
+    atualizarBarra(`Enviando o arquivo… ${(e.loaded / 1e9).toFixed(2)} de ${(e.total / 1e9).toFixed(2)} GB`, fracao);
+    $("decorrido").textContent = duracao(passou);
+    $("restante").textContent = fracao > 0.02 && passou > 2
+      ? `Falta ~${duracao(passou * (1 - fracao) / fracao)} de envio` : "Calculando o tempo de envio…";
+  };
+  envio.onload = () => {
+    const corpo = (() => { try { return JSON.parse(envio.responseText); } catch { return {}; } })();
+    envio = null;
+    if (!(corpo && corpo.id)) return falhar(corpo.detail || "O servidor recusou o envio.");
+    trabalhoAtual = corpo.id; falhasSeguidas = 0;
+    atualizarBarra("Na fila…", 0);
+    $("restante").textContent = "Calculando o tempo restante…";
+    carregarHistorico();
+    agendar();
+  };
+  envio.onerror = () => { envio = null; falhar("Não foi possível enviar o arquivo. O servidor está rodando?"); };
+  envio.onabort = () => { envio = null; terminarAcompanhamento(); $("mensagem").textContent = "Envio cancelado"; };
+  envio.send(dados);
+});
+
+// --- Acompanhamento --------------------------------------------------------------
+function iniciarAcompanhamento() {
+  $("enviar").disabled = true; $("cancelar").disabled = false;
+  $("painel-resultado").classList.add("oculto");
+  $("painel-estado").classList.remove("oculto", "erro");
+  $("detalhe-erro").textContent = ""; $("decorrido").textContent = "0s";
+  $("restante").textContent = "Calculando o tempo de envio…";
+  atualizarBarra("Enviando o arquivo…", 0);
+  $("painel-estado").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function terminarAcompanhamento() {
+  clearTimeout(sondagem); sondagem = null; trabalhoAtual = null;
+  $("enviar").disabled = false; $("cancelar").disabled = true;
+}
+function atualizarBarra(mensagem, fracao) {
+  const pct = Math.round(fracao * 100);
+  $("mensagem").textContent = mensagem;
+  $("percentual").textContent = pct + "%";
+  $("preenchimento").style.width = (fracao * 100) + "%";
+  $("barra").setAttribute("aria-valuenow", String(pct));
+}
 function falhar(detalhe) {
-  clearInterval(sondagem);
-  $("enviar").disabled = false;
+  terminarAcompanhamento();
   $("painel-estado").classList.add("erro");
   $("mensagem").textContent = "Falhou";
+  $("restante").textContent = "";
   $("detalhe-erro").textContent = detalhe;
 }
+function agendar() { sondagem = setTimeout(acompanhar, 1000); }
 
-async function acompanhar(id) {
-  const t = await (await fetch(`/api/trabalhos/${id}`)).json();
+async function acompanhar() {
+  const id = trabalhoAtual; if (!id) return;
+  let t;
+  try {
+    const r = await fetch(`/api/trabalhos/${id}`);
+    if (r.status === 404) return falhar("O servidor foi reiniciado e perdeu este trabalho. Envie de novo.");
+    if (!r.ok) throw new Error(r.statusText);
+    t = await r.json(); falhasSeguidas = 0;
+  } catch (erro) {
+    // Uma falha isolada não encerra o acompanhamento; várias seguidas sim.
+    if (++falhasSeguidas >= 5) return falhar("Sem resposta do servidor. Ele ainda está rodando?");
+    $("restante").textContent = "Reconectando…";
+    return agendar();
+  }
+  if (id !== trabalhoAtual) return;
+  $("decorrido").textContent = duracao(t.decorrido_s);
   if (t.estado === "erro") return falhar(t.erro);
-  atualizar(t.mensagem, t.progresso);
-  if (t.estado !== "concluido") return;
+  if (t.estado === "cancelado") {
+    terminarAcompanhamento(); atualizarBarra("Cancelado — nenhum arquivo foi mantido", t.progresso);
+    $("restante").textContent = ""; return;
+  }
+  atualizarBarra(t.mensagem, t.progresso);
+  if (t.estado === "concluido") return concluir(id, t);
+  $("restante").textContent = t.estado === "cancelando" ? "Cancelando…"
+    : t.restante_s != null ? `Falta ~${duracao(t.restante_s)}` : "Calculando o tempo restante…";
+  agendar();
+}
 
-  clearInterval(sondagem);
-  $("enviar").disabled = false;
+$("cancelar").addEventListener("click", async () => {
+  if (envio) { envio.abort(); return; }
+  if (!trabalhoAtual) return;
+  $("cancelar").disabled = true; $("restante").textContent = "Cancelando…";
+  try { await fetch(`/api/trabalhos/${trabalhoAtual}/cancelar`, { method: "POST" }); } catch {}
+});
+
+function concluir(id, t) {
+  terminarAcompanhamento();
+  $("restante").textContent = `Concluído em ${duracao(t.decorrido_s)}`;
   $("r-falas").textContent = t.total_falas;
   $("r-duracao").textContent = (t.duracao / 60).toFixed(1);
   $("r-locutores").textContent = t.locutores.join(", ");
-  $("r-arquivos").innerHTML = t.arquivos.map((nome) =>
-    `<a href="/api/trabalhos/${id}/arquivos/${encodeURIComponent(nome)}" download>${nome}</a>`
-  ).join("");
-  $("r-previa").innerHTML = t.previa.map((f) =>
-    `<div class="fala faixa${f.faixa}"><time>${tempo(f.inicio)}</time>` +
-    `<b>${f.locutor}</b><span>${f.texto}</span></div>`
-  ).join("");
+  $("r-arquivos").replaceChildren(...t.arquivos.map((nome) =>
+    el("a", { href: `/api/trabalhos/${id}/arquivos/${encodeURIComponent(nome)}`, download: "", text: nome })));
+  $("r-pasta").textContent = t.pasta ? `Salvos também em: ${t.pasta}` : "";
+  $("r-previa").replaceChildren(...t.previa.map((f) => {
+    const linha = el("div", { class: "fala" }, el("time", { text: relogio(f.inicio) }),
+      el("b", { text: f.locutor }), el("span", { text: f.texto }));
+    linha.style.setProperty("--cor", `var(--f${((f.faixa - 1) % 8) + 1})`);
+    return linha;
+  }));
   const notas = [...(t.avisos || [])];
   if (t.previa.length < t.total_falas) {
     notas.push(`Prévia das primeiras ${t.previa.length} falas — baixe um arquivo para ver tudo.`);
@@ -248,14 +909,27 @@ async function acompanhar(id) {
   $("painel-resultado").classList.remove("oculto");
 }
 
-$("video").addEventListener("change", (e) => {
-  const arquivo = e.target.files[0];
-  $("aviso-tempo").textContent = arquivo
-    ? `${(arquivo.size / 1e9).toFixed(2)} GB. A transcrição costuma levar entre 0,3× e 1× a duração do vídeo.`
-    : "";
-});
-
-carregarOpcoes();
+// --- Início --------------------------------------------------------------------
+async function iniciar() {
+  let dados = { modelos: [], modelo_padrao: "", max_faixas: 8, ffmpeg: "?" };
+  try { dados = await (await fetch("/api/modelos")).json(); } catch {}
+  maxFaixas = dados.max_faixas || 8;
+  const rascunho = restaurarRascunho();
+  $("modelo").replaceChildren(...dados.modelos.map((m) => el("option", { value: m.apelido,
+    text: `${m.apelido} — ${m.descricao}${m.baixado ? "" : ` (baixa ~${m.tamanho_mb} MB na 1ª vez)`}` })));
+  $("modelo").value = rascunho?.modelo && dados.modelos.some((m) => m.apelido === rascunho.modelo)
+    ? rascunho.modelo : dados.modelo_padrao;
+  if (!dados.ffmpeg) {
+    $("alerta-ffmpeg").textContent = "ffmpeg não encontrado. Instale com “sudo apt install ffmpeg” " +
+      "ou “pip install imageio-ffmpeg” antes de enviar o arquivo.";
+    $("alerta-ffmpeg").classList.remove("oculto");
+  }
+  montarDicas(document);
+  desenharFaixas(); listaContexto.desenhar(); aplicarTrecho();
+  $("cancelar").disabled = true;
+  carregarHistorico(); carregarIdiomas();
+}
+iniciar();
 </script>
 </body>
 </html>

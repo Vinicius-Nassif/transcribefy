@@ -1,12 +1,17 @@
 # Transcribefy
 
-Transcreve uma gravação do OBS **com duas faixas de áudio** e devolve uma
-transcrição única, em ordem cronológica, com cada linha atribuída a um locutor:
+Transcreve uma gravação de mesa de RPG **com uma ou mais faixas de áudio** — as
+trilhas do OBS ou um arquivo por pessoa — e devolve uma transcrição única, em ordem
+cronológica, com cada linha atribuída a um locutor. Cada faixa é de um tipo:
 
-- **Faixa 1** — o microfone do GM. Locutor único, rotulado direto.
-- **Faixa 2** — os jogadores. Separada em vozes distintas por agrupamento de x-vectors.
+- **Uma pessoa** — o microfone do GM, por exemplo. Rotulada direto com o nome.
+- **Várias pessoas** — o retorno do Discord. Separada em vozes distintas por
+  agrupamento de x-vectors.
 
-Quem interrompe não some: falas simultâneas das duas faixas são mantidas, cada uma
+A mesa clássica (trilha 1 o GM, trilha 2 os jogadores) é o padrão; vão até 8
+faixas por transcrição.
+
+Quem interrompe não some: falas simultâneas de faixas diferentes são mantidas, cada uma
 com o seu tempo real, e marcadas no `.detalhado.json`
 ([detalhes](docs/uso.md#falas-simultâneas)).
 
@@ -26,7 +31,8 @@ GPU NVIDIA fica cerca de dez vezes mais rápido; sem ela roda igual, só mais de
 Os formatos de saída e a tradução vêm do
 [`pytranscript`](https://pypi.org/project/pytranscript/). Roda **100% offline**
 depois do download inicial dos modelos — o áudio da sua sessão nunca sai da
-máquina. A única exceção é a tradução opcional, que consulta o Google Tradutor.
+máquina. A tradução também é offline, com os modelos do Argos Translate; o Google
+Tradutor fica como opção marcada "online", para idiomas não instalados.
 
 ## Documentação
 

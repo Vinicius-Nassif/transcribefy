@@ -13,7 +13,8 @@ RUN apt-get update \
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_ROOT_USER_ACTION=ignore \
-    TRANSCRITOR_MODELOS=/modelos
+    TRANSCRITOR_MODELOS=/modelos \
+    TRANSCRITOR_DADOS=/app/dados
 
 WORKDIR /app
 

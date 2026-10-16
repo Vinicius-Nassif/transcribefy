@@ -55,3 +55,28 @@ def test_duracao_em_segundos(relatorio_fixo):
 def test_rotulo_legivel(relatorio_fixo):
     primeira, _ = ffmpeg_tools.listar_faixas_audio(Path("sessao.mkv"))
     assert primeira.rotulo == "Faixa 1 - Mic do GM - aac (LC), 48000 Hz, stereo"
+
+
+def test_extrai_varias_trilhas_numa_chamada(tmp_path):
+    import subprocess
+
+    from transcritor import ffmpeg_tools
+
+    origem = tmp_path / "duas.mka"
+    tom = "sine=frequency={}:duration=2"
+    subprocess.run(
+        [ffmpeg_tools.localizar_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", tom.format(440), "-f", "lavfi", "-i", tom.format(660),
+         "-map", "0", "-map", "1", "-c:a", "pcm_s16le", str(origem)],
+        check=True,
+    )
+    a, b = ffmpeg_tools.extrair_faixas(
+        origem, [(0, tmp_path / "a.wav"), (1, tmp_path / "b.wav")], fim=1.0
+    )
+    import wave
+
+    for wav in (a, b):
+        with wave.Wave_read(str(wav)) as onda:
+            assert (onda.getnchannels(), onda.getframerate()) == (1, 16000)
+            assert abs(onda.getnframes() / 16000 - 1.0) < 0.05
+    assert a.read_bytes() != b.read_bytes()

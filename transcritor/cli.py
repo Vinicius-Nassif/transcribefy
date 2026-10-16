@@ -7,16 +7,17 @@ import sys
 import time
 from pathlib import Path
 
-from . import ffmpeg_tools, modelos, pipeline, saida
+from . import ffmpeg_tools, modelos, pipeline, saida, temporarios
+from .progresso import EstimativaTempo
 
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="transcritor",
         description=(
-            "Transcreve um MP4 do OBS com duas faixas de áudio (faixa 1: GM, "
-            "faixa 2: jogadores) e gera uma transcrição única com os locutores "
-            "separados pela voz."
+            "Transcreve uma gravação com uma ou mais faixas de áudio (por padrão, "
+            "faixa 1: GM e faixa 2: jogadores) e gera uma transcrição única com "
+            "os locutores separados pela voz."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -24,6 +25,8 @@ def _parser() -> argparse.ArgumentParser:
             "  transcritor faixas sessao.mp4\n"
             "  transcritor transcrever sessao.mp4 -o saida/sessao-01\n"
             "  transcritor transcrever sessao.mp4 --nomes Ana,Bruno,Caio,Duda,Edu\n"
+            "  transcritor transcrever sessao.mp4 --faixa '1; nomes=GM' --faixa '2; nomes=Ana' \\\n"
+            "      --faixa '3; nomes=Bruno,Caio; vozes=2'\n"
             "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
             "  transcritor diagnostico\n"
@@ -37,6 +40,13 @@ def _parser() -> argparse.ArgumentParser:
     lista = sub.add_parser("modelos", help="lista e baixa os modelos de fala")
     lista.add_argument(
         "--baixar", metavar="APELIDO", help="baixa um modelo de fala antecipadamente"
+    )
+
+    idiomas = sub.add_parser("idiomas", help="lista e instala os idiomas de tradução")
+    idiomas.add_argument("--origem", default="pt", help="idioma do áudio (padrão: pt)")
+    idiomas.add_argument(
+        "--instalar", metavar="ORIGEM-DESTINO",
+        help="baixa o modelo offline de um par, ex.: pt-en ou pt-es (~70 MB cada)",
     )
 
     sub.add_parser(
@@ -58,18 +68,35 @@ def _parser() -> argparse.ArgumentParser:
         "-m", "--modelo", default=modelos.PADRAO,
         help=f"modelo de fala: {', '.join(modelos.MODELOS_FALA)} ou um caminho",
     )
-    t.add_argument("--faixa-gm", type=int, default=1, help="número da faixa do GM (1-based)")
     t.add_argument(
-        "--faixa-grupo", type=int, default=2, help="número da faixa dos jogadores (1-based)"
+        "--faixa", action="append", default=[], metavar="ESPEC",
+        help=(
+            "uma faixa a transcrever; repita para cada uma. Formato: "
+            "'TRILHA[; nomes=A,B][; vozes=N|auto][; ajuste=S][; arquivo=CAMINHO]'. "
+            "Com 'vozes' a faixa tem várias pessoas e é separada por voz; sem, é "
+            "de uma pessoa só (no máximo um nome). Ex.: --faixa '1; nomes=GM' "
+            "--faixa '2; nomes=Ana,Bruno; vozes=5'"
+        ),
     )
-    t.add_argument("--nome-gm", default="GM", help="como chamar o locutor da faixa 1")
-    t.add_argument(
-        "-n", "--jogadores", default="5",
-        help="quantos locutores há na faixa 2; use 'auto' para estimar",
+    legado = t.add_argument_group(
+        "atalhos para a mesa de duas faixas (GM + jogadores); não combinam com --faixa"
     )
-    t.add_argument(
-        "--nomes", default="",
+    legado.add_argument("--faixa-gm", type=int, default=None, help="número da faixa do GM (padrão 1)")
+    legado.add_argument(
+        "--faixa-grupo", type=int, default=None, help="número da faixa dos jogadores (padrão 2)"
+    )
+    legado.add_argument("--nome-gm", default=None, help="como chamar o locutor da faixa do GM")
+    legado.add_argument(
+        "-n", "--jogadores", default=None,
+        help="quantos locutores há na faixa dos jogadores (padrão 5); 'auto' estima",
+    )
+    legado.add_argument(
+        "--nomes", default=None,
         help="nomes dos jogadores separados por vírgula, na ordem em que falam",
+    )
+    legado.add_argument(
+        "--deslocamento", type=float, default=None,
+        help="ajuste de sincronia da faixa dos jogadores, em segundos",
     )
     t.add_argument(
         "-f", "--formatos", default=",".join(saida.FORMATOS),
@@ -77,7 +104,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     t.add_argument(
         "--idioma", default="pt",
-        help="idioma do áudio ('auto' detecta); também define o alvo da tradução",
+        help="idioma do áudio ('auto' detecta); é a origem da tradução",
     )
     t.add_argument(
         "--contexto", default="",
@@ -91,12 +118,12 @@ def _parser() -> argparse.ArgumentParser:
         help="onde rodar o Whisper; 'auto' usa a GPU quando houver",
     )
     t.add_argument(
-        "--traduzir", default=None, metavar="IDIOMA",
-        help="também gera a transcrição traduzida (ex.: en, es)",
-    )
-    t.add_argument(
-        "--deslocamento", type=float, default=0.0,
-        help="ajuste de sincronia da faixa 2, em segundos",
+        "--traduzir", default=None, metavar="IDIOMAS",
+        help=(
+            "também gera a transcrição traduzida, separada por vírgula: 'en,es' usa "
+            "os modelos offline instalados; 'google:ja' usa o Google Tradutor "
+            "(online). Veja 'transcritor idiomas'"
+        ),
     )
     t.add_argument(
         "--inicio", type=float, default=0.0,
@@ -152,6 +179,33 @@ def _cmd_modelos(args) -> int:
     return 0
 
 
+def _cmd_idiomas(args) -> int:
+    from . import traducao
+
+    if args.instalar:
+        origem, _, destino = args.instalar.partition("-")
+        if not destino:
+            raise ValueError("Use --instalar ORIGEM-DESTINO, por exemplo pt-en.")
+        traducao.instalar(origem, destino)
+        print(f"Pronto: {traducao.nome(origem)} → {traducao.nome(destino)} offline.")
+        return 0
+    idiomas = traducao.disponiveis(args.origem)
+    offline = [i for i in idiomas if i.servico == traducao.OFFLINE]
+    online = [i for i in idiomas if i.servico == traducao.GOOGLE]
+    print(f"Tradução a partir de {traducao.nome(args.origem)}:\n")
+    print("Offline (modelos instalados — o texto não sai da máquina):")
+    for idioma in offline:
+        print(f"  {idioma.valor:<12} {idioma.nome}")
+    if not offline:
+        print("  nenhum. Instale com: transcritor idiomas --instalar pt-en")
+    print(f"\nOnline (Google Tradutor): {len(online)} idiomas" if online else
+          "\nOnline (Google Tradutor): sem conexão agora")
+    if online:
+        print("  use com o prefixo google:, ex.: --traduzir google:ja")
+    print(f"\nModelos em {traducao.pasta()}")
+    return 0
+
+
 def _cmd_diagnostico(args) -> int:
     """Reúne num lugar só o que costuma explicar uma transcrição que falhou."""
     import platform
@@ -191,34 +245,114 @@ def _cmd_web(args) -> int:
     return 0
 
 
+def _numero(texto: str, campo: str) -> int:
+    try:
+        return int(texto)
+    except ValueError:
+        raise ValueError(f"'{campo}' precisa ser um número inteiro, não '{texto}'.") from None
+
+
+def _trilha(numero: int | str | None, padrao: int, campo: str) -> int:
+    """Número de trilha digitado (a partir de 1) -> índice (a partir de 0).
+
+    Compara com None, e não usa `or`: um 0 digitado é um erro a apontar, não um
+    "não informado" a trocar em silêncio pela trilha padrão.
+    """
+    if numero is None:
+        return padrao - 1
+    valor = numero if isinstance(numero, int) else _numero(numero, campo)
+    if valor < 1:
+        raise ValueError(f"'{campo}' começa em 1 (a primeira trilha), não em {valor}.")
+    return valor - 1
+
+
+def faixa_da_especificacao(texto: str) -> pipeline.Faixa:
+    """Lê uma faixa no formato de `--faixa`: 'TRILHA; chave=valor; ...'."""
+    partes = [p.strip() for p in texto.split(";") if p.strip()]
+    if not partes:
+        raise ValueError("--faixa vazia: informe ao menos o número da trilha.")
+    faixa = pipeline.Faixa(trilha=_trilha(partes[0], 1, "trilha"))
+    for parte in partes[1:]:
+        chave, igual, valor = (x.strip() for x in parte.partition("="))
+        if not igual:
+            raise ValueError(f"Em --faixa, '{parte}' deveria ser chave=valor.")
+        if chave == "nomes":
+            faixa.nomes = [n.strip() for n in valor.split(",") if n.strip()]
+        elif chave == "vozes":
+            faixa.varias_pessoas = True
+            faixa.vozes = None if valor.lower() == "auto" else _numero(valor, "vozes")
+        elif chave == "ajuste":
+            faixa.ajuste = float(valor)
+        elif chave == "arquivo":
+            faixa.arquivo = Path(valor)
+        else:
+            raise ValueError(
+                f"Em --faixa, chave desconhecida '{chave}'. Use nomes, vozes, ajuste ou arquivo."
+            )
+    return faixa
+
+
+def faixas_dos_argumentos(args) -> list[pipeline.Faixa]:
+    """As faixas pedidas: por --faixa, ou pelos atalhos da mesa de duas faixas."""
+    atalhos = [
+        args.faixa_gm, args.faixa_grupo, args.nome_gm,
+        args.jogadores, args.nomes, args.deslocamento,
+    ]
+    if args.faixa:
+        if any(a is not None for a in atalhos):
+            raise ValueError(
+                "Use --faixa ou os atalhos (--faixa-gm, --nomes...), não os dois juntos."
+            )
+        return [faixa_da_especificacao(texto) for texto in args.faixa]
+
+    jogadores = (args.jogadores or "5").strip()
+    return [
+        pipeline.Faixa(
+            trilha=_trilha(args.faixa_gm, 1, "--faixa-gm"),
+            nomes=[args.nome_gm if args.nome_gm is not None else "GM"],
+        ),
+        pipeline.Faixa(
+            trilha=_trilha(args.faixa_grupo, 2, "--faixa-grupo"),
+            nomes=[n.strip() for n in (args.nomes or "").split(",") if n.strip()],
+            varias_pessoas=True,
+            vozes=None if jogadores.lower() == "auto" else _numero(jogadores, "jogadores"),
+            ajuste=args.deslocamento or 0.0,
+        ),
+    ]
+
+
+def _duracao_legivel(segundos: float) -> str:
+    minutos, segundos = divmod(int(segundos + 0.5), 60)
+    horas, minutos = divmod(minutos, 60)
+    if horas:
+        return f"{horas}h{minutos:02d}"
+    return f"{minutos}min{segundos:02d}s" if minutos else f"{segundos}s"
+
+
 def _cmd_transcrever(args) -> int:
+    temporarios.limpar_orfas()  # sobras de execuções interrompidas à força
     destino = args.saida or Path("saida") / args.video.stem
-    jogadores = None if args.jogadores.strip().lower() == "auto" else int(args.jogadores)
-    nomes = [n.strip() for n in args.nomes.split(",") if n.strip()]
 
     config = pipeline.Configuracao(
         video=args.video,
         destino=destino,
+        faixas=faixas_dos_argumentos(args),
         modelo_fala=args.modelo,
-        faixa_gm=args.faixa_gm - 1,
-        faixa_grupo=args.faixa_grupo - 1,
-        nome_gm=args.nome_gm,
-        n_jogadores=jogadores,
-        nomes_jogadores=nomes,
         formatos=[f.strip() for f in args.formatos.split(",") if f.strip()],
         idioma=args.idioma,
-        traduzir_para=args.traduzir,
+        traducoes=[v.strip() for v in (args.traduzir or "").split(",") if v.strip()],
         contexto=args.contexto,
         dispositivo=args.dispositivo,
-        deslocamento_grupo=args.deslocamento,
         inicio=args.inicio,
         fim=args.fim,
         juntar_falas=not args.sem_juntar,
     )
 
     ultimo = [0.0]
+    estimativa = EstimativaTempo()
 
     def relatar(mensagem: str, fracao: float) -> None:
+        estimativa.registrar(fracao)
         agora = time.monotonic()
         if fracao < 1.0 and agora - ultimo[0] < 0.5:
             return
@@ -226,11 +360,17 @@ def _cmd_transcrever(args) -> int:
         largura = 30
         cheio = int(fracao * largura)
         barra = "#" * cheio + "-" * (largura - cheio)
-        print(f"\r[{barra}] {fracao * 100:5.1f}%  {mensagem[:45]:<45}", end="", flush=True)
+        restante = estimativa.restante()
+        falta = f"falta ~{_duracao_legivel(restante)}" if restante else ""
+        print(
+            f"\r[{barra}] {fracao * 100:5.1f}% {falta:<16} {mensagem[:40]:<40}",
+            end="", flush=True,
+        )
 
     resultado = pipeline.executar(config, relatar)
     print()
-    print(f"\n{len(resultado.falas)} falas | {resultado.duracao / 60:.1f} min")
+    print(f"\n{len(resultado.falas)} falas | {resultado.duracao / 60:.1f} min "
+          f"| em {_duracao_legivel(estimativa.decorrido)}")
     print(f"Locutores: {', '.join(resultado.locutores)}")
     for aviso in resultado.avisos:
         print(f"Aviso: {aviso}")
@@ -261,6 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         "faixas": _cmd_faixas,
         "modelos": _cmd_modelos,
         "diagnostico": _cmd_diagnostico,
+        "idiomas": _cmd_idiomas,
         "web": _cmd_web,
         "transcrever": _cmd_transcrever,
     }
@@ -269,6 +410,6 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, FileNotFoundError, RuntimeError, TypeError) as erro:
         print(f"\nErro: {erro}", file=sys.stderr)
         return 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, pipeline.Cancelado):
         print("\nInterrompido.", file=sys.stderr)
         return 130

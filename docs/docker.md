@@ -150,9 +150,13 @@ flowchart LR
 | No host | No container | Para quê |
 |---|---|---|
 | `midia/` | `/midia` | Gravações de entrada. Montada **somente para leitura**: a aplicação nunca escreve nos seus vídeos. |
-| `dados/` | `/app/dados` | Trabalhos enviados pela interface web, um diretório por envio. |
-| `saida/` | `/app/saida` | Transcrições geradas pela CLI. |
-| volume `modelos` | `/modelos` | Cache dos modelos de fala (Whisper e Vosk). |
+| `dados/` | `/app/dados` | Dados do usuário: o histórico dos termos de contexto (`TRANSCRITOR_DADOS`). |
+| `saida/` | `/app/saida` | Transcrições, da CLI e da interface web. |
+| volume `modelos` | `/modelos` | Cache dos modelos de fala (Whisper e Vosk) e de tradução offline. |
+
+O arquivo enviado pela interface e os áudios intermediários ficam em `/tmp`,
+dentro do container, e são apagados ao fim de cada transcrição. Numa sessão
+longa, o container precisa de espaço livre para uma cópia da gravação.
 
 O cache dos modelos é um **volume nomeado**, não uma pasta do projeto: ele sobrevive
 a `docker compose down` e a reconstruções da imagem, o que evita rebaixar até 1,6 GB
@@ -172,24 +176,23 @@ docker compose down -v
 | Como você roda | No container | No host |
 |---|---|---|
 | `transcrever -o saida/sessao-01` | `/app/saida/sessao-01.*` | `saida/sessao-01.*` |
-| Interface web | `/app/dados/trabalhos/<id>/<vídeo>.*` | `dados/trabalhos/<id>/<vídeo>.*` |
+| Interface web | `/app/saida/<vídeo>-<data-hora>-<código>/<vídeo>.*` | `saida/<vídeo>-<data-hora>-<código>/<vídeo>.*` |
 
 O diretório de trabalho do container é `/app`, então um caminho relativo como
 `-o saida/sessao-01` cai em `/app/saida` — que é a pasta `saida/` do projeto. É por
 isso que o mesmo comando funciona dentro e fora do container.
 
-Pela interface web, cada envio ganha um diretório próprio em `dados/trabalhos/`,
-identificado por um código, com **a cópia do vídeo enviado** ao lado das
-transcrições. A página de resultado oferece cada arquivo para download, o que
-costuma ser o caminho mais curto para tirá-los dali.
+Pela interface web, cada transcrição ganha uma pasta própria em `saida/`, com o
+nome do arquivo e a data. A cópia enviada não fica: só o resultado. A página de
+resultado oferece cada arquivo para download e mostra a pasta.
 
 > **Sem volume montado, a transcrição fica presa no container.** Um
 > `docker run --rm` sem `-v` a descarta junto com o container ao terminar. Com o
 > compose isso não acontece: as três pastas estão montadas.
 
-> **A pasta `dados/` só cresce.** Nada apaga os trabalhos antigos, e cada um guarda
-> uma cópia do vídeo — vários GB por sessão. De tempos em tempos, limpe o que já foi
-> baixado: `rm -rf dados/trabalhos/<id>`.
+> **Trabalhos de versões anteriores** ficavam em `dados/trabalhos/`, com uma cópia
+> do vídeo cada. Eles não são apagados automaticamente: depois de conferir que não
+> precisa deles, `rm -rf dados/trabalhos`.
 
 ### Levar os arquivos para o Windows
 
