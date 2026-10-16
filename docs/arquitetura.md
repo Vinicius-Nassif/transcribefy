@@ -244,7 +244,7 @@ de um bloco ele continua condicionando cada janela de 30 s na anterior.
 A extração dos x-vectors (`vozes.anexar_vetores`) é CPU pura e rodava numa thread
 só — cerca de um quarto do tempo total. Os trechos são independentes, então se
 dividem entre `PARALELISMO` threads (metade dos núcleos, até 8), com um
-`vosk.Model` compartilhado e um reconhecedor por thread; o Vosk solta o GIL.
+`vosk.Model` e o `vosk.SpkModel` compartilhados, e um reconhecedor por thread; o Vosk solta o GIL.
 Medido com o código antigo intercalado ao novo, em 10 min de áudio: a etapa caiu de
 42–45 s para 14–22 s.
 
