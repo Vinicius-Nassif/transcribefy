@@ -72,3 +72,87 @@ def test_trecho_curto_demais_nao_produz_vetor():
 
 def test_lista_vazia_nao_abre_modelo_nenhum(tmp_path):
     assert vozes.anexar_vetores(tmp_path / "x.wav", [], tmp_path, tmp_path) == []
+
+
+# --- Extração em paralelo ------------------------------------------------------
+
+import sys
+import types
+import wave
+
+import pytest
+
+from transcritor.fala import Fala
+
+
+@pytest.fixture
+def vosk_falso(monkeypatch):
+    """Um módulo `vosk` cujo vetor de voz é o próprio primeiro byte do trecho."""
+    criados = []
+
+    class Reconhecedor:
+        def __init__(self, modelo, taxa, locutor):
+            criados.append(self)
+            self.dados = b""
+
+        def AcceptWaveform(self, dados):
+            self.dados += dados
+            return False
+
+        def Result(self):
+            return "{}"
+
+        def FinalResult(self):
+            return json.dumps({"spk": [float(self.dados[0]), 1.0], "spk_frames": 50})
+
+        def Reset(self):
+            self.dados = b""
+
+    modulo = types.SimpleNamespace(
+        SetLogLevel=lambda *_: None, Model=lambda *_: object(),
+        SpkModel=lambda *_: object(), KaldiRecognizer=Reconhecedor,
+    )
+    monkeypatch.setitem(sys.modules, "vosk", modulo)
+    return criados
+
+
+def wav_com_marcas(caminho, segundos: int):
+    """Cada segundo do WAV tem um valor de amostra igual ao número do segundo."""
+    with wave.Wave_write(str(caminho)) as onda:
+        onda.setnchannels(1)
+        onda.setsampwidth(2)
+        onda.setframerate(100)
+        onda.writeframes(b"".join(bytes([s, 0]) * 100 for s in range(segundos)))
+
+
+def test_cada_fala_recebe_o_vetor_do_proprio_trecho(tmp_path, vosk_falso):
+    wav_com_marcas(tmp_path / "a.wav", 40)
+    falas = [Fala(float(s), s + 0.5, "x", 0) for s in range(40)]
+    vozes.anexar_vetores(tmp_path / "a.wav", falas, tmp_path, tmp_path, paralelismo=4)
+    assert [f.vetor_voz[0] for f in falas] == [float(s) for s in range(40)]
+    assert len(vosk_falso) == 4  # um reconhecedor por parte do trabalho
+
+
+def test_progresso_chega_a_um_e_nao_recua(tmp_path, vosk_falso):
+    wav_com_marcas(tmp_path / "a.wav", 20)
+    fracoes = []
+    falas = [Fala(float(s), s + 0.5, "x", 0) for s in range(20)]
+    vozes.anexar_vetores(
+        tmp_path / "a.wav", falas, tmp_path, tmp_path, progresso=fracoes.append, paralelismo=3
+    )
+    assert fracoes == sorted(fracoes) and fracoes[-1] == 1.0
+
+
+def test_cancelamento_no_progresso_para_todas_as_threads(tmp_path, vosk_falso):
+    wav_com_marcas(tmp_path / "a.wav", 60)
+    falas = [Fala(float(s), s + 0.5, "x", 0) for s in range(60)]
+
+    def cancela(fracao):
+        if fracao > 0.2:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        vozes.anexar_vetores(
+            tmp_path / "a.wav", falas, tmp_path, tmp_path, progresso=cancela, paralelismo=4
+        )
+    assert sum(f.vetor_voz is not None for f in falas) < 60
