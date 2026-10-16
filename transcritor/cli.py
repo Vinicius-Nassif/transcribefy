@@ -252,12 +252,26 @@ def _numero(texto: str, campo: str) -> int:
         raise ValueError(f"'{campo}' precisa ser um número inteiro, não '{texto}'.") from None
 
 
+def _trilha(numero: int | str | None, padrao: int, campo: str) -> int:
+    """Número de trilha digitado (a partir de 1) -> índice (a partir de 0).
+
+    Compara com None, e não usa `or`: um 0 digitado é um erro a apontar, não um
+    "não informado" a trocar em silêncio pela trilha padrão.
+    """
+    if numero is None:
+        return padrao - 1
+    valor = numero if isinstance(numero, int) else _numero(numero, campo)
+    if valor < 1:
+        raise ValueError(f"'{campo}' começa em 1 (a primeira trilha), não em {valor}.")
+    return valor - 1
+
+
 def faixa_da_especificacao(texto: str) -> pipeline.Faixa:
     """Lê uma faixa no formato de `--faixa`: 'TRILHA; chave=valor; ...'."""
     partes = [p.strip() for p in texto.split(";") if p.strip()]
     if not partes:
         raise ValueError("--faixa vazia: informe ao menos o número da trilha.")
-    faixa = pipeline.Faixa(trilha=_numero(partes[0], "trilha") - 1)
+    faixa = pipeline.Faixa(trilha=_trilha(partes[0], 1, "trilha"))
     for parte in partes[1:]:
         chave, igual, valor = (x.strip() for x in parte.partition("="))
         if not igual:
@@ -294,11 +308,11 @@ def faixas_dos_argumentos(args) -> list[pipeline.Faixa]:
     jogadores = (args.jogadores or "5").strip()
     return [
         pipeline.Faixa(
-            trilha=(args.faixa_gm or 1) - 1,
+            trilha=_trilha(args.faixa_gm, 1, "--faixa-gm"),
             nomes=[args.nome_gm if args.nome_gm is not None else "GM"],
         ),
         pipeline.Faixa(
-            trilha=(args.faixa_grupo or 2) - 1,
+            trilha=_trilha(args.faixa_grupo, 2, "--faixa-grupo"),
             nomes=[n.strip() for n in (args.nomes or "").split(",") if n.strip()],
             varias_pessoas=True,
             vozes=None if jogadores.lower() == "auto" else _numero(jogadores, "jogadores"),

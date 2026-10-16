@@ -63,3 +63,12 @@ def test_duracao_legivel():
     assert cli._duracao_legivel(42) == "42s"
     assert cli._duracao_legivel(125) == "2min05s"
     assert cli._duracao_legivel(3 * 3600 + 7 * 60) == "3h07"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [("--faixa-gm", "0"), ("--faixa-grupo", "0"), ("--faixa", "0; nomes=GM"), ("--faixa", "-2")],
+)
+def test_trilha_zero_ou_negativa_e_recusada_em_vez_de_virar_a_padrao(argv):
+    with pytest.raises(ValueError, match="começa em 1"):
+        faixas(*argv)
