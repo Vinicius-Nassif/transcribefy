@@ -184,9 +184,21 @@ def validar(config: Configuracao, inspecoes: dict[Path, ffmpeg_tools.Inspecao]) 
         raise ValueError("Escolha pelo menos uma faixa para transcrever.")
     if len(faixas) > MAX_FAIXAS:
         raise ValueError(f"São no máximo {MAX_FAIXAS} faixas por transcrição.")
+    # Formato errado é erro de digitação: melhor recusar agora do que depois de
+    # horas de transcrição, quando `saida.escrever` o encontraria.
+    desconhecidos = [f for f in config.formatos if f not in saida.FORMATOS]
+    if desconhecidos:
+        raise ValueError(
+            f"Formato desconhecido: {', '.join(desconhecidos)}. "
+            f"Use {', '.join(saida.FORMATOS)}."
+        )
+    if not config.formatos:
+        raise ValueError("Escolha ao menos um formato de saída.")
 
     avisos: list[str] = []
     usadas: dict[tuple[Path, int], int] = {}
+    # Um nome em duas faixas viraria um locutor só na saída, juntando duas pessoas.
+    dono_do_nome: dict[str, int] = {}
     for posicao, faixa in enumerate(faixas):
         arquivo = Path(faixa.arquivo or config.video)
         disponiveis = inspecoes[arquivo].faixas
@@ -204,6 +216,13 @@ def validar(config: Configuracao, inspecoes: dict[Path, ffmpeg_tools.Inspecao]) 
         usadas[chave] = posicao
 
         nomes, repetidos = sem_repetidos(faixa.nomes)
+        for nome in nomes:
+            outra = dono_do_nome.setdefault(nome.casefold(), posicao)
+            if outra != posicao:
+                raise ValueError(
+                    f"O nome “{nome}” está nas faixas {outra + 1} e {posicao + 1}. Cada "
+                    "pessoa precisa de um nome só dela, senão as falas das duas se misturam."
+                )
         if repetidos:
             avisos.append(
                 f"Faixa {posicao + 1}: nome(s) repetido(s) considerado(s) uma vez só: "
@@ -225,10 +244,15 @@ def validar(config: Configuracao, inspecoes: dict[Path, ffmpeg_tools.Inspecao]) 
 
     if config.inicio < 0:
         raise ValueError("O início do trecho não pode ser negativo.")
+    duracoes = [i.duracao for i in inspecoes.values() if i.duracao]
+    if duracoes and config.inicio >= max(duracoes):
+        raise ValueError(
+            f"O início do trecho ({config.inicio:.0f} s) passa da duração do áudio "
+            f"({max(duracoes):.0f} s)."
+        )
     if config.fim is not None:
         if config.fim <= config.inicio:
             raise ValueError("O fim do trecho precisa ser depois do início.")
-        duracoes = [i.duracao for i in inspecoes.values() if i.duracao]
         if duracoes and config.fim > max(duracoes) + 0.5:
             raise ValueError(
                 f"O fim do trecho ({config.fim:.0f} s) passa da duração do áudio "
@@ -294,7 +318,7 @@ def executar(
     avisos = validar(config, inspecoes)
 
     duracao_total = max((i.duracao or 0.0) for i in inspecoes.values()) or 1.0
-    duracao = (config.fim or duracao_total) - config.inicio
+    duracao = max(1.0, (config.fim or duracao_total) - config.inicio)
 
     acompanhar.avisar("Preparando os modelos")
     modelo = modelos.resolver_modelo_fala(config.modelo_fala, config.diretorio_modelos)

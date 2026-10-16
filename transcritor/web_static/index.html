@@ -535,7 +535,7 @@ function cartaoFaixa(f, i, recolher) {
         if (!f.varias_pessoas && f.nomes.length > 1) f.nomes = f.nomes.slice(-1);
         lista?.desenhar();
         dicaNomes.textContent = repetiu ? "Esse nome já está na lista desta faixa." : "";
-        atualizarVozes(); atualizarResumo();
+        atualizarVozes(); atualizarResumo(); validarFaixas();
       },
     });
   aplicarModo();
@@ -550,6 +550,16 @@ function validarFaixas() {
     if (vistos.has(chave)) erro = `As faixas ${vistos.get(chave) + 1} e ${i + 1} usam a mesma trilha.`;
     else vistos.set(chave, i);
     if (f.arquivo === undefined) f.arquivo = null;
+  });
+  // Um nome em duas faixas juntaria duas pessoas num locutor só; o servidor recusa.
+  const donos = new Map();
+  faixas.forEach((f, i) => {
+    for (const nome of semRepetidos(f.nomes)) {
+      const chave = nome.toLocaleLowerCase("pt-BR");
+      if (!donos.has(chave)) donos.set(chave, i);
+      else if (donos.get(chave) !== i && !erro)
+        erro = `O nome “${nome}” está nas faixas ${donos.get(chave) + 1} e ${i + 1}. Cada pessoa precisa de um nome só dela.`;
+    }
   });
   const sem = faixas.findIndex((f, i) => document.getElementById(`faixa${i}-outro_arquivo`)?.checked && !f.arquivo);
   if (!erro && sem >= 0) erro = `Escolha o arquivo da faixa ${sem + 1}, ou desligue “outro arquivo”.`;

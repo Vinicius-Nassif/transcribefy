@@ -205,3 +205,24 @@ def test_o_comando_de_diagnostico_esta_registrado():
     from transcritor import cli
 
     assert cli._parser().parse_args(["diagnostico"]).comando == "diagnostico"
+
+
+def test_o_mesmo_nome_em_duas_faixas_e_recusado():
+    faixas = [pipeline.Faixa(0, ("Ana",)), pipeline.Faixa(1, ("ana", "Bruno"), varias_pessoas=True)]
+    with pytest.raises(ValueError, match="faixas 1 e 2"):
+        pipeline.validar(config(faixas=faixas), inspecao())
+
+
+def test_formato_desconhecido_e_recusado_antes_de_transcrever():
+    with pytest.raises(ValueError, match="Formato desconhecido: docx"):
+        pipeline.validar(config(formatos=["txt", "docx"]), inspecao())
+
+
+def test_sem_formato_nenhum_e_recusado():
+    with pytest.raises(ValueError, match="ao menos um formato"):
+        pipeline.validar(config(formatos=[]), inspecao())
+
+
+def test_inicio_alem_da_duracao_e_recusado():
+    with pytest.raises(ValueError, match="início do trecho .* passa da duração"):
+        pipeline.validar(config(inicio=20000), inspecao(duracao=600.0))
