@@ -1,15 +1,16 @@
 """Geração dos arquivos de transcrição.
 
-O `pytranscript.Transcript` cuida dos formatos txt/csv/json/srt/vtt e da
-tradução. Estendemos a classe apenas para usar o tempo final real de cada fala
-nas legendas, em vez da estimativa de 5 segundos do original.
+O `pytranscript.Transcript` cuida dos formatos txt/csv/json/srt/vtt. Estendemos a
+classe apenas para usar o tempo final real de cada fala nas legendas, em vez da
+estimativa de 5 segundos do original. A tradução vem de fora (`traducao`), como
+uma função que traduz uma lista de textos.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytranscript
@@ -19,6 +20,10 @@ from .fala import Fala
 
 FORMATOS_PYTRANSCRIPT = ("txt", "csv", "json", "srt", "vtt")
 FORMATOS = (*FORMATOS_PYTRANSCRIPT, "md")
+
+# Recebe os textos de todas as falas e devolve a tradução de cada um; None
+# marca o que não pôde ser traduzido.
+Traduzir = Callable[[list[str]], list[str | None]]
 
 # Piso de duração de uma legenda, para que uma resposta de uma palavra ainda
 # apareça tempo suficiente na tela.
@@ -127,48 +132,40 @@ class ArquivosGerados:
     avisos: list[str] = field(default_factory=list)
 
 
-def _traduzir(
-    transcript: TranscricaoComLocutores, alvo: str
-) -> tuple[TranscricaoComLocutores, list[str]]:
-    """Traduz via pytranscript, reinserindo as linhas que a tradução não cobriu.
+def traduzir_falas(falas: Sequence[Fala], traduzir: Traduzir) -> tuple[list[Fala], list[str]]:
+    """Copia as falas com o texto traduzido. Devolve (falas, avisos).
 
-    O `Transcript.translate` descarta as linhas que falharam; aqui elas voltam no
-    idioma original, para que nada suma da transcrição e os tempos continuem alinhados.
+    Só o texto é traduzido, nunca o nome do locutor — "Mestre" não pode virar
+    "Master" na legenda. Uma fala que a tradução não cobre fica no idioma
+    original, no mesmo lugar e com o mesmo tempo: nada some da transcrição.
     """
-    simples, erros = transcript.translate(alvo)
-
-    # O tempo final viaja junto com a linha, e não por posição: a tradução
-    # devolve as linhas que deram certo e as que falharam em duas listas, e
-    # remontá-las por índice desalinharia os fins assim que uma linha falhasse.
-    finais: dict[float, list[float]] = {}
-    for inicio, fim in zip(transcript.time, transcript.tempos_finais, strict=False):
-        finais.setdefault(inicio, []).append(fim)
-
-    def fim_de(inicio: float) -> float:
-        pendentes = finais.get(inicio)
-        return pendentes.pop(0) if pendentes else inicio + DURACAO_MINIMA_LEGENDA
-
-    linhas = [
-        (t, texto, fim_de(t))
-        for t, texto in zip(simples.time, simples.text, strict=True)
+    traduzidos = traduzir([f.texto for f in falas])
+    copias = [
+        replace(fala, texto=novo if novo else fala.texto, palavras=[])
+        for fala, novo in zip(falas, traduzidos, strict=True)
     ]
-    linhas.extend((erro.time, erro.line, fim_de(erro.time)) for erro in erros)
-    linhas.sort(key=lambda item: item[0])
-
-    traduzida = TranscricaoComLocutores(
-        time=[t for t, _, _ in linhas],
-        text=[texto for _, texto, _ in linhas],
-        language=alvo,
-        time_end=transcript.time_end,
-        tempos_finais=[fim for _, _, fim in linhas],
-    )
+    falhas = sum(1 for novo in traduzidos if not novo)
     avisos = []
-    if erros:
+    if falhas:
         avisos.append(
-            f"{len(erros)} linha(s) não puderam ser traduzidas e ficaram no "
-            f"idioma original."
+            f"{falhas} linha(s) não puderam ser traduzidas e ficaram no idioma original."
         )
-    return traduzida, avisos
+    return copias, avisos
+
+
+def _escrever_formatos(
+    falas: Sequence[Fala], base: Path, sufixo: str, formatos: Sequence[str], idioma: str
+) -> list[Path]:
+    transcript = construir_transcript(falas, idioma=idioma)
+    arquivos = []
+    for formato in formatos:
+        caminho = base.with_name(f"{base.name}{sufixo}.{formato}")
+        if formato == "md":
+            caminho.write_text(para_markdown(falas, base.stem), encoding="utf-8")
+        else:
+            _gravar(transcript, caminho)
+        arquivos.append(caminho)
+    return arquivos
 
 
 def escrever(
@@ -176,7 +173,8 @@ def escrever(
     destino_base: Path,
     formatos: Sequence[str] = FORMATOS,
     idioma: str = "auto",
-    traduzir_para: str | None = None,
+    traducoes: Sequence[tuple[str, Traduzir]] = (),
+    progresso: Callable[[float], None] | None = None,
 ) -> ArquivosGerados:
     """Escreve a transcrição mesclada em todos os formatos pedidos.
 
@@ -184,37 +182,32 @@ def escrever(
         falas: falas já mescladas e rotuladas.
         destino_base: caminho sem extensão (ex.: `saida/sessao-01`).
         formatos: subconjunto de `FORMATOS`.
-        idioma: idioma de origem, usado na tradução.
-        traduzir_para: código de idioma alvo (ex.: "en"); None desativa a tradução.
+        idioma: idioma de origem, gravado nos metadados.
+        traducoes: pares (código do idioma, função de tradução). Cada um gera
+            os mesmos formatos com o código no nome (`sessao-01.en.srt`).
+        progresso: recebe a fração concluída, uma vez por tradução.
 
     Returns:
         Os caminhos dos arquivos gerados e eventuais avisos.
     """
     destino_base = Path(destino_base)
     destino_base.parent.mkdir(parents=True, exist_ok=True)
-    transcript = construir_transcript(falas, idioma=idioma)
-    resultado = ArquivosGerados()
-
     for formato in formatos:
-        caminho = destino_base.with_suffix(f".{formato}")
-        if formato == "md":
-            caminho.write_text(para_markdown(falas, destino_base.stem), encoding="utf-8")
-        else:
-            _gravar(transcript, caminho)
-        resultado.arquivos.append(caminho)
+        if formato not in FORMATOS:
+            raise ValueError(f"Formato desconhecido: {formato}")
+    resultado = ArquivosGerados()
+    resultado.arquivos.extend(_escrever_formatos(falas, destino_base, "", formatos, idioma))
 
     detalhado = destino_base.with_suffix(".detalhado.json")
     detalhado.write_text(para_json_detalhado(falas), encoding="utf-8")
     resultado.arquivos.append(detalhado)
 
-    if traduzir_para:
-        traduzida, avisos = _traduzir(transcript, traduzir_para)
-        resultado.avisos.extend(avisos)
-        for formato in formatos:
-            if formato == "md":
-                continue
-            caminho = destino_base.with_suffix(f".{traduzir_para}.{formato}")
-            _gravar(traduzida, caminho)
-            resultado.arquivos.append(caminho)
-
+    for feitas, (codigo, traduzir) in enumerate(traducoes, start=1):
+        traduzidas, avisos = traduzir_falas(falas, traduzir)
+        resultado.avisos.extend(f"{codigo}: {aviso}" for aviso in avisos)
+        resultado.arquivos.extend(
+            _escrever_formatos(traduzidas, destino_base, f".{codigo}", formatos, codigo)
+        )
+        if progresso is not None:
+            progresso(feitas / len(traducoes))
     return resultado

@@ -98,6 +98,7 @@ def atribuir_locutores(
     nomes: Sequence[str] | None = None,
     prefixo: str = "Jogador",
     suavizar: bool = True,
+    primeiro: int = 1,
 ) -> list[Fala]:
     """Rotula cada fala com um locutor, agrupando as vozes por similaridade.
 
@@ -107,6 +108,9 @@ def atribuir_locutores(
         nomes: nomes a usar, na ordem em que cada locutor aparece pela primeira vez.
         prefixo: usado para nomear os locutores sem nome informado.
         suavizar: corrige atribuições isoladas usando o contexto temporal.
+        primeiro: número do primeiro locutor sem nome ("Jogador 1"). Com várias
+            faixas de grupo, cada uma começa depois da anterior, para que dois
+            jogadores diferentes nunca recebam o mesmo rótulo.
 
     Returns:
         A mesma lista, com o campo `locutor` preenchido.
@@ -122,7 +126,7 @@ def atribuir_locutores(
         confiaveis = [i for i, f in enumerate(falas) if f.vetor_voz]
     if not confiaveis:  # sem vetores não há como separar vozes
         for fala in falas:
-            fala.locutor = _nome(0, nomes, prefixo)
+            fala.locutor = _nome(0, nomes, prefixo, primeiro)
         return falas
 
     matriz = _matriz_normalizada([falas[i].vetor_voz for i in confiaveis])
@@ -153,11 +157,11 @@ def atribuir_locutores(
         chave = ordem[0] if grupo is None else grupo
         if chave not in vistos:
             vistos[chave] = len(vistos)
-        fala.locutor = _nome(vistos[chave], nomes, prefixo)
+        fala.locutor = _nome(vistos[chave], nomes, prefixo, primeiro)
     return falas
 
 
-def _nome(posicao: int, nomes: Sequence[str] | None, prefixo: str) -> str:
+def _nome(posicao: int, nomes: Sequence[str] | None, prefixo: str, primeiro: int = 1) -> str:
     if nomes and posicao < len(nomes):
         return nomes[posicao]
-    return f"{prefixo} {posicao + 1}"
+    return f"{prefixo} {primeiro + posicao}"
