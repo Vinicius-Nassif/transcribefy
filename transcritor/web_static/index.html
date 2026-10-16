@@ -657,11 +657,25 @@ async function esquecer(termo) {
 
 // --- Idiomas de tradução (seleção múltipla) -----------------------------------
 let idiomas = [];
+// O servidor manda os nomes do Google em inglês; o navegador sabe dizê-los em
+// português. Quando ele não conhece o código, fica o nome que veio do servidor.
+const nomesDeIdioma = (() => {
+  try { return new Intl.DisplayNames(["pt-BR"], { type: "language" }); } catch { return null; }
+})();
+function nomeEmPortugues(codigo, padrao) {
+  let nome = null;
+  try { nome = nomesDeIdioma?.of(codigo); } catch {}
+  if (!nome || nome.toLowerCase() === codigo.toLowerCase()) return padrao;
+  return nome.charAt(0).toLocaleUpperCase("pt-BR") + nome.slice(1);
+}
+const semAcento = (texto) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
 async function carregarIdiomas() {
   $("traducao-dica").textContent = "Carregando…";
   try {
     const r = await (await fetch(`/api/idiomas?origem=${$("idioma").value}`)).json();
-    idiomas = r.idiomas;
+    idiomas = r.idiomas
+      .map((i) => ({ ...i, nome: nomeEmPortugues(i.valor.replace(/^google:/, ""), i.nome) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     const offline = idiomas.some((i) => i.servico === "offline");
     $("traducao-dica").textContent = offline ? "" :
       `Nenhum idioma offline instalado. Para instalar: ${r.instalar}`;
@@ -671,12 +685,12 @@ async function carregarIdiomas() {
   desenharIdiomas();
 }
 function desenharIdiomas() {
-  const busca = $("traducao-busca").value.trim().toLocaleLowerCase("pt-BR");
+  const busca = semAcento($("traducao-busca").value.trim());
   const grupos = [["offline", "Offline — não sai do computador"], ["google", "Online — Google Tradutor"]];
   const caixa = $("traducao-opcoes"); caixa.replaceChildren();
   for (const [servico, titulo] of grupos) {
     const itens = idiomas.filter((i) => i.servico === servico &&
-      (!busca || i.nome.toLocaleLowerCase("pt-BR").includes(busca) || i.valor.includes(busca)));
+      (!busca || semAcento(i.nome).includes(busca) || i.valor.includes(busca)));
     if (!itens.length) continue;
     const grupo = el("fieldset", {}, el("legend", { text: titulo }));
     for (const i of itens) {
