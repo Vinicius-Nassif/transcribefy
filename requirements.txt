@@ -14,6 +14,7 @@ pytranscript==0.3.0
 python-multipart==0.0.32
 requests==2.34.2
 scipy==1.18.1
+sentencepiece==0.2.2
 tqdm==4.70.1
 uvicorn[standard]==0.52.4
 vosk==0.3.45
