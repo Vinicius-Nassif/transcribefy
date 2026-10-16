@@ -293,6 +293,7 @@ async def _receber(request: Request, pasta: Path) -> tuple[dict[str, str], list[
 @app.post("/api/trabalhos")
 async def criar_trabalho(request: Request) -> JSONResponse:
     """Recebe a gravação e a configuração (campo `config`, JSON) e enfileira."""
+    identificador = uuid.uuid4().hex[:12]
     temporaria = temporarios.PastaTemporaria()
     try:
         campos, enviados = await _receber(request, temporaria.caminho)
@@ -307,8 +308,10 @@ async def criar_trabalho(request: Request) -> JSONResponse:
         nome, video = principais[0]
         extras = [c for campo, _, c in enviados if campo == "arquivos"]
 
+        # O código do trabalho entra no nome: dois envios do mesmo arquivo no
+        # mesmo segundo (um clique duplo, duas abas) não podem dividir a pasta.
         carimbo = time.strftime("%Y%m%d-%H%M%S")
-        destino_pasta = pasta_saida() / f"{Path(nome).stem}-{carimbo}"
+        destino_pasta = pasta_saida() / f"{Path(nome).stem}-{carimbo}-{identificador[:6]}"
         try:
             config = montar_configuracao(pedido, video, extras, destino_pasta / Path(nome).stem)
             inspecoes = await run_in_threadpool(
@@ -321,8 +324,7 @@ async def criar_trabalho(request: Request) -> JSONResponse:
         temporaria.remover()
         raise
 
-    historico.registrar(pedido.contexto)
-    identificador = uuid.uuid4().hex[:12]
+    avisos.extend(await run_in_threadpool(_registrar_historico, pedido.contexto))
     trabalho = Trabalho(
         id=identificador, nome_video=nome, temporaria=temporaria, destino=destino_pasta
     )
@@ -334,6 +336,20 @@ async def criar_trabalho(request: Request) -> JSONResponse:
         "faixas": [f.rotulo for f in inspecoes[video].faixas],
         "avisos": avisos,
     })
+
+
+def _registrar_historico(termos: list[str]) -> list[str]:
+    """Guarda os termos para sugerir depois. Devolve avisos; nunca levanta.
+
+    As sugestões são um extra: uma pasta de dados sem permissão de escrita não
+    pode impedir uma transcrição de começar.
+    """
+    try:
+        historico.registrar(termos)
+    except Exception as erro:  # noqa: BLE001
+        traceback.print_exc()
+        return [f"Os termos de contexto não foram salvos no histórico: {erro}"]
+    return []
 
 
 def _explicar(erro: ValidationError) -> str:

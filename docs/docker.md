@@ -176,7 +176,7 @@ docker compose down -v
 | Como você roda | No container | No host |
 |---|---|---|
 | `transcrever -o saida/sessao-01` | `/app/saida/sessao-01.*` | `saida/sessao-01.*` |
-| Interface web | `/app/saida/<vídeo>-<data-hora>/<vídeo>.*` | `saida/<vídeo>-<data-hora>/<vídeo>.*` |
+| Interface web | `/app/saida/<vídeo>-<data-hora>-<código>/<vídeo>.*` | `saida/<vídeo>-<data-hora>-<código>/<vídeo>.*` |
 
 O diretório de trabalho do container é `/app`, então um caminho relativo como
 `-o saida/sessao-01` cai em `/app/saida` — que é a pasta `saida/` do projeto. É por

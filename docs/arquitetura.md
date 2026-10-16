@@ -288,7 +288,7 @@ flowchart LR
   T --> V["validação<br/>(faixas, intervalo)"]
   V -->|erro| X["400 + pasta removida"]
   V --> F["fila"] --> P["pipeline"]
-  P -->|concluído| S["saida/&lt;nome&gt;-&lt;data&gt;/"]
+  P -->|concluído| S["saida/&lt;nome&gt;-&lt;data&gt;-&lt;código&gt;/"]
   P -->|erro ou cancelado| R["resultado parcial removido"]
   S --> L["pasta temporária removida"]
   R --> L

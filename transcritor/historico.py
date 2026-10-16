@@ -54,7 +54,10 @@ def _ler(arquivo: Path) -> list[dict]:
     except (OSError, ValueError, AttributeError):
         # Arquivo corrompido: guarda uma cópia para quem quiser recuperar à mão e
         # recomeça, em vez de impedir a transcrição por causa de sugestões.
-        arquivo.replace(arquivo.with_suffix(".json.corrompido"))
+        try:
+            arquivo.replace(arquivo.with_suffix(".json.corrompido"))
+        except OSError:
+            pass  # sem permissão para guardar a cópia: segue sem ela
         return []
 
 

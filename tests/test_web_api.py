@@ -234,3 +234,26 @@ def test_nenhum_idioma_selecionado_e_sem_traducao(cliente, gravacao, monkeypatch
     monkeypatch.setattr(pipeline, "executar", falso_executar(capturado))
     esperar(cliente, enviar(cliente, gravacao, pedido(traducoes=[])).json()["id"])
     assert list(capturado["config"].traducoes) == []
+
+
+def test_dois_envios_do_mesmo_arquivo_nao_dividem_a_pasta(cliente, gravacao, monkeypatch):
+    monkeypatch.setattr(pipeline, "executar", falso_executar({}))
+    monkeypatch.setattr(web.time, "strftime", lambda *_: "20261016-010000")  # mesmo segundo
+    a = esperar(cliente, enviar(cliente, gravacao, pedido()).json()["id"])
+    b = esperar(cliente, enviar(cliente, gravacao, pedido()).json()["id"])
+    assert a["pasta"] != b["pasta"]
+    assert Path(a["pasta"]).is_dir() and Path(b["pasta"]).is_dir()
+
+
+def test_historico_sem_permissao_nao_impede_a_transcricao(cliente, gravacao, monkeypatch, tmp_path):
+    from transcritor import historico
+
+    def sem_permissao(termos, arquivo=None):
+        raise PermissionError("somente leitura")
+
+    monkeypatch.setattr(pipeline, "executar", falso_executar({}))
+    monkeypatch.setattr(historico, "registrar", sem_permissao)
+    resposta = enviar(cliente, gravacao, pedido(contexto=["Strahd"]))
+    assert resposta.status_code == 200, resposta.text
+    assert any("histórico" in a for a in resposta.json()["avisos"])
+    assert esperar(cliente, resposta.json()["id"])["estado"] == "concluido"

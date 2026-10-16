@@ -720,7 +720,7 @@ apagaria a interrupção da linha do tempo.
 | Interface | Caminho |
 |---|---|
 | Linha de comando | O que você passou em `-o`. Sem essa opção, `saida/<nome-do-vídeo>`, **relativo à pasta de onde o comando foi chamado**. |
-| Web | `saida/<nome-do-arquivo>-<data-hora>/`, uma pasta por transcrição. A página mostra o caminho completo ao terminar. `TRANSCRITOR_SAIDA` troca a pasta-base. |
+| Web | `saida/<nome-do-arquivo>-<data-hora>-<código>/`, uma pasta por transcrição. A página mostra o caminho completo ao terminar. `TRANSCRITOR_SAIDA` troca a pasta-base. |
 
 A página de resultado oferece cada arquivo para download, o que costuma ser a forma
 mais direta de tirá-los dali — principalmente se o navegador está noutra máquina.
