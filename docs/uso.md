@@ -724,7 +724,8 @@ uma cópia na pasta do trabalho. Essa cópia é temporária:
 |---|---|
 | terminou | É apagada. As transcrições ficam. |
 | falhou | Fica, com um `trabalho.json` ao lado, para tentar de novo sem reenviar o arquivo (`POST /api/trabalhos/<código>/tentar-novamente`). Funciona mesmo depois de reiniciar o servidor. |
-| falhou há mais de 7 dias | É apagada ao subir a interface web, ou quando você roda `transcritor limpar`. |
+| foi recusada por pedir uma faixa que o arquivo não tem | Fica. A resposta informa quantas faixas o arquivo tem, e basta corrigir as faixas e reenviar só a configuração, sem subir o vídeo de novo. |
+| falhou ou foi recusada há mais de 7 dias | É apagada ao subir a interface web, ou quando você roda `transcritor limpar`. |
 
 Só se apaga o arquivo que o `trabalho.json` aponta, dentro da pasta do próprio
 trabalho. O vídeo original, no seu computador, e os arquivos passados pela linha

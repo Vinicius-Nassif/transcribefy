@@ -13,10 +13,20 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import copias, ffmpeg_tools, historico, modelos, pipeline, progresso, saida, traducao
+from . import (
+    copias,
+    ffmpeg_tools,
+    historico,
+    modelos,
+    pipeline,
+    progresso,
+    saida,
+    traducao,
+    transcricao,
+)
 from . import faixas as arranjo  # `faixas` é o nome do campo do formulário
 
 RAIZ_TRABALHOS = copias.RAIZ_PADRAO
@@ -142,9 +152,7 @@ def _ffmpeg_disponivel() -> str | None:
         return None
 
 
-@app.post("/api/trabalhos")
-async def criar_trabalho(
-    video: UploadFile,
+def _formulario(
     modelo: str = Form(modelos.PADRAO),
     faixas: str = Form(""),
     faixa_gm: int = Form(1),
@@ -161,25 +169,44 @@ async def criar_trabalho(
     inicio: float = Form(0.0),
     fim: str = Form(""),
     juntar: bool = Form(True),
-) -> JSONResponse:
-    """Recebe o vídeo e enfileira a transcrição.
+) -> dict:
+    """Os campos da configuração, iguais no envio e no reenvio da configuração.
 
     As faixas vêm em `faixas`, um JSON no formato de `faixas.ler_json`. Sem ele,
     valem os campos do arranjo de duas faixas (`faixa_gm`, `faixa_grupo`,
     `nome_gm`, `jogadores`, `nomes`, `deslocamento`), com o comportamento de
-    antes. A resposta traz em `avisos` os nomes repetidos entre faixas.
+    antes.
 
     `termos` é a lista do contexto da mesa, um por linha: vai ao Whisper como
     uma frase e fica no histórico de sugestões. `contexto` é texto livre, como
-    o `--contexto` da CLI, e vai como foi escrito.
+    o `--contexto` da CLI, e vai como foi escrito. `traduzir` são os códigos
+    dos idiomas de destino, separados por vírgula (veja `/api/idiomas`).
     """
-    parametros = {
-        "modelo": modelo, "faixas": faixas, "faixa_gm": faixa_gm, "faixa_grupo": faixa_grupo,
-        "nome_gm": nome_gm, "jogadores": jogadores, "nomes": nomes,
-        "formatos": formatos, "idioma": idioma, "traduzir": traduzir,
-        "contexto": contexto, "termos": termos, "deslocamento": deslocamento, "inicio": inicio,
-        "fim": fim, "juntar": juntar,
+    return {
+        "modelo": modelo, "faixas": faixas, "faixa_gm": faixa_gm,
+        "faixa_grupo": faixa_grupo, "nome_gm": nome_gm, "jogadores": jogadores,
+        "nomes": nomes, "formatos": formatos, "idioma": idioma, "traduzir": traduzir,
+        "contexto": contexto, "termos": termos, "deslocamento": deslocamento,
+        "inicio": inicio, "fim": fim, "juntar": juntar,
     }
+
+
+@app.post("/api/trabalhos")
+async def criar_trabalho(
+    video: UploadFile, parametros: dict = Depends(_formulario)
+) -> JSONResponse:
+    """Recebe o vídeo e enfileira a transcrição.
+
+    Respostas:
+    - 200: `{id, faixas, avisos}` — enfileirado; `avisos` traz os nomes
+      repetidos entre faixas.
+    - 400: o arquivo não é lido ou a configuração é inválida. Nada fica
+      guardado: reenviar o mesmo arquivo com os mesmos campos não resolveria.
+    - 422: a configuração pede uma faixa que o arquivo não tem. A cópia
+      **fica**, e a resposta traz `id`, `faixas_no_arquivo` e `total_faixas`,
+      para corrigir as faixas e reenviar só a configuração
+      (`POST /api/trabalhos/{id}/configuracao`).
+    """
     identificador = uuid.uuid4().hex[:12]
     pasta = RAIZ_TRABALHOS / identificador
     pasta.mkdir(parents=True, exist_ok=True)
@@ -190,29 +217,55 @@ async def criar_trabalho(
         shutil.copyfileobj(video.file, destino, length=4 << 20)
     await video.close()
 
-    # Um envio recusado aqui não é falha de transcrição: tentar de novo com o
-    # mesmo arquivo e os mesmos campos não resolveria, então nada fica guardado.
     try:
         no_arquivo = ffmpeg_tools.listar_faixas_audio(caminho_video)
         config = _configuracao(parametros, caminho_video, pasta)
-        arranjo.validar(list(config.faixas), len(no_arquivo))
+        arranjo.validar(list(config.faixas))
     except (ValueError, ffmpeg_tools.FFmpegIndisponivel) as erro:
         shutil.rmtree(pasta, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(erro)) from erro
     copias.registrar(pasta, nome, parametros)
+    return _enfileirar(identificador, pasta, nome, parametros, config, no_arquivo)
 
-    avisos = arranjo.nomes_repetidos(config.faixas)
-    avisos.extend(_registrar_historico(parametros["termos"]))
-    trabalho = Trabalho(id=identificador, nome_video=nome, pasta=pasta, avisos=list(avisos))
+
+def _enfileirar(
+    identificador: str,
+    pasta: Path,
+    nome_video: str,
+    parametros: dict,
+    config: pipeline.Configuracao,
+    no_arquivo: list[ffmpeg_tools.FaixaAudio],
+) -> JSONResponse:
+    """Confere as faixas contra o arquivo e põe o trabalho na fila.
+
+    Comum ao envio, à nova tentativa e ao reenvio da configuração. A cópia já
+    está registrada; se faltar faixa no arquivo, ela fica como `recusado`.
+    """
+    rotulos = [f.rotulo for f in no_arquivo]
+    try:
+        arranjo.validar(list(config.faixas), len(no_arquivo))
+    except ValueError as erro:
+        copias.marcar(pasta, copias.RECUSADO, str(erro), parametros=parametros)
+        return JSONResponse(status_code=422, content={
+            "detail": str(erro),
+            "id": identificador,
+            "faixas_no_arquivo": rotulos,
+            "total_faixas": len(no_arquivo),
+        })
+
     with _trava:
+        atual = _trabalhos.get(identificador)
+        if atual is not None and atual.estado in ("na fila", "processando"):
+            raise HTTPException(status_code=409, detail=f"O trabalho já está {atual.estado}.")
+        copias.marcar(pasta, copias.AGUARDANDO, parametros=parametros)
+        avisos = arranjo.nomes_repetidos(config.faixas)
+        avisos.extend(_registrar_historico(parametros.get("termos", "")))
+        trabalho = Trabalho(
+            id=identificador, nome_video=nome_video, pasta=pasta, avisos=list(avisos)
+        )
         _trabalhos[identificador] = trabalho
     _executor.submit(_processar, trabalho, config)
-
-    return JSONResponse({
-        "id": identificador,
-        "faixas": [f.rotulo for f in no_arquivo],
-        "avisos": avisos,
-    })
+    return JSONResponse({"id": identificador, "faixas": rotulos, "avisos": avisos})
 
 
 def _configuracao(parametros: dict, video: Path, pasta: Path) -> pipeline.Configuracao:
@@ -277,41 +330,106 @@ def remover_do_historico(termo: str) -> dict:
     return {"termos": historico.listar(ARQUIVO_HISTORICO)}
 
 
+def _copia_guardada(identificador: str) -> tuple[Path, copias.Registro, Path]:
+    """Pasta, registro e cópia de um trabalho que pode ser refeito, ou o erro HTTP."""
+    if not _ID_VALIDO.fullmatch(identificador):
+        raise HTTPException(status_code=404, detail="Trabalho não encontrado")
+    with _trava:
+        atual = _trabalhos.get(identificador)
+    if atual is not None and atual.estado != "erro":
+        raise HTTPException(
+            status_code=409,
+            detail=f"O trabalho está {atual.estado}; só um trabalho que falhou ou "
+            "foi recusado pode ser refeito.",
+        )
+    pasta = RAIZ_TRABALHOS / identificador
+    registro = copias.ler(pasta)
+    video = copias.copia(pasta)
+    if registro is None or video is None:
+        raise HTTPException(
+            status_code=404,
+            detail="A cópia do vídeo deste trabalho não existe mais. Envie o arquivo de novo.",
+        )
+    return pasta, registro, video
+
+
+def _refazer(identificador: str, parametros: dict | None) -> JSONResponse:
+    pasta, registro, video = _copia_guardada(identificador)
+    parametros = registro.parametros if parametros is None else parametros
+    try:
+        no_arquivo = ffmpeg_tools.listar_faixas_audio(video)
+        config = _configuracao(parametros, video, pasta)
+        arranjo.validar(list(config.faixas))
+    except (ValueError, ffmpeg_tools.FFmpegIndisponivel) as erro:
+        # A configuração nova é inválida, mas a cópia continua valendo.
+        raise HTTPException(status_code=400, detail=str(erro)) from erro
+    return _enfileirar(identificador, pasta, registro.video, parametros, config, no_arquivo)
+
+
 @app.post("/api/trabalhos/{identificador}/tentar-novamente")
 def tentar_novamente(identificador: str) -> JSONResponse:
-    """Reprocessa um trabalho que falhou, com a cópia do vídeo guardada no envio.
+    """Reprocessa um trabalho que falhou, com a cópia e a configuração guardadas.
 
     Também serve para um trabalho interrompido por uma queda do servidor: o que
     vale é a cópia e o registro em disco, não a memória do processo.
     """
-    if not _ID_VALIDO.fullmatch(identificador):
-        raise HTTPException(status_code=404, detail="Trabalho não encontrado")
-    pasta = RAIZ_TRABALHOS / identificador
-    with _trava:
-        atual = _trabalhos.get(identificador)
-        if atual is not None and atual.estado != "erro":
-            raise HTTPException(
-                status_code=409,
-                detail=f"O trabalho está {atual.estado}; só um trabalho que falhou "
-                "pode ser tentado de novo.",
-            )
-        registro = copias.ler(pasta)
-        video = copias.copia(pasta)
-        if registro is None or video is None:
-            raise HTTPException(
-                status_code=404,
-                detail="A cópia do vídeo deste trabalho não existe mais. "
-                "Envie o arquivo de novo.",
-            )
-        config = _configuracao(registro.parametros, video, pasta)
-        copias.marcar(pasta, copias.AGUARDANDO)
-        trabalho = Trabalho(
-            id=identificador, nome_video=registro.video, pasta=pasta,
-            avisos=arranjo.nomes_repetidos(config.faixas),
-        )
-        _trabalhos[identificador] = trabalho
-    _executor.submit(_processar, trabalho, config)
-    return JSONResponse({"id": identificador})
+    return _refazer(identificador, None)
+
+
+@app.post("/api/trabalhos/{identificador}/configuracao")
+def reconfigurar(
+    identificador: str, parametros: dict = Depends(_formulario)
+) -> JSONResponse:
+    """Refaz um trabalho recusado ou que falhou com outra configuração, sem reenviar o vídeo.
+
+    Aceita os mesmos campos do envio. As respostas são as mesmas também: 422
+    se ainda faltar faixa no arquivo, com a cópia guardada.
+    """
+    return _refazer(identificador, parametros)
+
+
+@app.post("/api/faixas/verificar")
+def verificar_faixas(faixas: str = Form("")) -> dict:
+    """Confere as faixas antes do envio, para a página avisar enquanto se digita.
+
+    Não depende do arquivo: só o que dá para saber pela configuração. Erros e
+    avisos vêm prontos para mostrar; `repetidos` diz quais nomes e em quais
+    faixas (a partir de 1), para a página destacar os campos.
+    """
+    try:
+        lidas = arranjo.ler_json(faixas)
+        arranjo.validar(lidas)
+    except ValueError as erro:
+        return {"erros": [str(erro)], "avisos": [], "repetidos": []}
+    return {
+        "erros": [],
+        "avisos": arranjo.nomes_repetidos(lidas),
+        "repetidos": [
+            {"nome": nome, "faixas": numeros} for nome, numeros in arranjo.repeticoes(lidas)
+        ],
+    }
+
+
+@app.get("/api/idiomas")
+def listar_idiomas() -> dict:
+    """Idiomas do áudio (os do Whisper) e de tradução (os do motor ativo)."""
+    motor = traducao.motor()
+    audio = {codigo: traducao.nome(codigo) for codigo in transcricao.idiomas_do_audio()}
+    return {
+        "audio": {
+            "padrao": "pt",
+            "idiomas": [
+                {"codigo": "auto", "nome": "Detectar automaticamente"},
+                *traducao.em_ordem(audio),
+            ],
+        },
+        "traducao": {
+            "motor": motor.nome,
+            "descricao": motor.descricao,
+            "online": motor.online,
+            "idiomas": traducao.em_ordem(motor.idiomas()),
+        },
+    }
 
 
 def _processar(trabalho: Trabalho, config: pipeline.Configuracao) -> None:

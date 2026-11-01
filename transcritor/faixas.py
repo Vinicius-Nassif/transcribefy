@@ -254,27 +254,32 @@ def validar(faixas: Sequence[Faixa], no_arquivo: int | None = None) -> None:
             )
 
 
-def nomes_repetidos(faixas: Sequence[Faixa]) -> list[str]:
-    """Avisos para nomes que aparecem em mais de uma faixa.
+def repeticoes(faixas: Sequence[Faixa]) -> list[tuple[str, list[int]]]:
+    """Nomes que aparecem em mais de uma faixa, com os números das faixas (a partir de 1).
 
-    Não é erro — pode ser de propósito —, mas nas transcrições as falas das
-    faixas vão parecer da mesma pessoa. A comparação ignora maiúsculas e espaços.
+    A comparação ignora maiúsculas e espaços; fica a primeira grafia.
     """
     onde: dict[str, list[int]] = {}
     grafia: dict[str, str] = {}
     for faixa in faixas:
         proprios = [faixa.nome_unico] if faixa.tipo == UMA else list(faixa.nomes)
-        for nome in {n.strip().casefold(): n.strip() for n in proprios if n.strip()}.items():
-            chave, original = nome
+        for chave, original in {n.strip().casefold(): n.strip() for n in proprios if n.strip()}.items():
             grafia.setdefault(chave, original)
             onde.setdefault(chave, []).append(faixa.numero + 1)
+    return [(grafia[chave], numeros) for chave, numeros in onde.items() if len(numeros) > 1]
 
+
+def nomes_repetidos(faixas: Sequence[Faixa]) -> list[str]:
+    """Avisos para nomes que aparecem em mais de uma faixa.
+
+    Não é erro — pode ser de propósito —, mas nas transcrições as falas das
+    faixas vão parecer da mesma pessoa.
+    """
     avisos = []
-    for chave, numeros in onde.items():
-        if len(numeros) > 1:
-            lista = ", ".join(str(n) for n in numeros[:-1]) + f" e {numeros[-1]}"
-            avisos.append(
-                f"O nome \"{grafia[chave]}\" aparece nas faixas {lista}: nas "
-                "transcrições, as falas delas vão parecer da mesma pessoa."
-            )
+    for nome, numeros in repeticoes(faixas):
+        lista = ", ".join(str(n) for n in numeros[:-1]) + f" e {numeros[-1]}"
+        avisos.append(
+            f"O nome \"{nome}\" aparece nas faixas {lista}: nas transcrições, as "
+            "falas delas vão parecer da mesma pessoa."
+        )
     return avisos

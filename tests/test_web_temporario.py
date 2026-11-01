@@ -183,10 +183,14 @@ def test_identificador_fora_do_formato_e_recusado(ambiente, identificador):
     assert resposta.status_code == 404
 
 
-def test_arquivo_recusado_no_envio_nao_deixa_nada_para_tras(ambiente, monkeypatch):
-    """Faixas de menos não é falha de transcrição: tentar de novo não resolveria."""
+def test_arquivo_ilegivel_nao_deixa_nada_para_tras(ambiente, monkeypatch):
+    """Um arquivo que nem se lê não melhora com outra configuração."""
     raiz, _ = ambiente
-    monkeypatch.setattr(web.ffmpeg_tools, "listar_faixas_audio", lambda _v: [faixa(0)])
+
+    def ilegivel(_video):
+        raise ValueError("não é um arquivo de mídia")
+
+    monkeypatch.setattr(web.ffmpeg_tools, "listar_faixas_audio", ilegivel)
     resposta = TestClient(web.app).post(
         "/api/trabalhos", files={"video": ("s.mp4", b"x", "video/mp4")}
     )

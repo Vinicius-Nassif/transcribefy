@@ -22,6 +22,7 @@ __all__ = [
     "Fala",
     "aviso_de_dispositivo",
     "dispositivo_efetivo",
+    "idiomas_do_audio",
     "preparar_wav",
     "transcrever",
     "wav_valido",
@@ -72,6 +73,13 @@ def aviso_de_dispositivo(modelo: ModeloPronto, preferencia: str = "auto") -> str
     if diagnostico.gpus < 1 or diagnostico.utilizavel:
         return ""
     return f"Transcrevendo em CPU, bem mais devagar. {diagnostico.explicacao}"
+
+
+def idiomas_do_audio() -> list[str]:
+    """Códigos dos idiomas que o Whisper reconhece. O Vosk em uso é só português."""
+    from faster_whisper.tokenizer import _LANGUAGE_CODES
+
+    return list(_LANGUAGE_CODES)
 
 
 def dispositivo_efetivo(modelo: ModeloPronto, preferencia: str = "auto") -> str:

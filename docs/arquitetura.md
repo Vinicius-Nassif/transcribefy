@@ -128,6 +128,31 @@ As constantes de custo foram medidas numa RTX 4050 e num i7; só a proporção
 entre elas importa. Se a estimativa errar sistematicamente numa máquina, é ali
 que se ajusta.
 
+### A API da interface web
+
+| Rota | Para quê |
+|---|---|
+| `GET /api/modelos` | Modelos de fala, o padrão, os formatos e se há ffmpeg |
+| `GET /api/idiomas` | Idiomas do áudio (os do Whisper, mais `auto`) e de tradução (os do motor ativo), com nome em português |
+| `POST /api/faixas/verificar` | Confere as faixas antes do envio: erros, avisos e quais nomes se repetem em quais faixas |
+| `GET`/`DELETE /api/historico/contexto` | Sugestões de termos de contexto |
+| `POST /api/trabalhos` | Envia o vídeo e a configuração |
+| `GET /api/trabalhos/{id}` | Estado, progresso, tempo restante e resultado |
+| `POST /api/trabalhos/{id}/tentar-novamente` | Refaz um trabalho que falhou, com a cópia e a configuração guardadas |
+| `POST /api/trabalhos/{id}/configuracao` | Refaz um trabalho recusado ou que falhou com outra configuração, sem reenviar o vídeo |
+| `GET /api/trabalhos/{id}/arquivos/{nome}` | Baixa um arquivo gerado |
+
+O envio e o reenvio da configuração aceitam os mesmos campos, porque os dois
+dependem de `web._formulario`. Os dois, e a nova tentativa, terminam em
+`web._enfileirar`, que confere as faixas contra o arquivo:
+
+| Resposta | Quando | A cópia do vídeo |
+|---|---|---|
+| 200 | Enfileirado | Fica até o fim; some no sucesso |
+| 400 | Arquivo ilegível ou configuração inválida | No envio, é apagada (refazer não resolveria); no reenvio, fica |
+| 422 | Pede uma faixa que o arquivo não tem | Fica como `recusado`; a resposta traz `id`, `faixas_no_arquivo` e `total_faixas` |
+| 409 | O trabalho já está na fila, rodando ou concluído | — |
+
 ### Os dois motores de reconhecimento
 
 | | `motor_whisper.py` (padrão) | `motor_vosk.py` |
@@ -376,6 +401,7 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
 | `test_transcricao.py` | Validação do WAV e escolha do motor |
 | `test_traducao.py` | Lotes, conferência da quantidade de linhas, falhas, registro de motores e idiomas |
+| `test_web_api.py` | Recusa que guarda a cópia, reenvio da configuração, verificação das faixas e idiomas |
 | `test_historico.py` | Ordem por uso, limite, arquivo corrompido e a API do histórico |
 | `test_progresso.py` | Quando há base para estimar, o texto do tempo restante, a API e a linha da CLI |
 | `test_web.py` | Contrato entre a API e o formulário da página |

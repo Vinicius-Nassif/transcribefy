@@ -94,7 +94,6 @@ def test_nome_repetido_volta_como_aviso_e_o_trabalho_segue(ambiente):
     [
         ("não é json", "JSON"),
         ("[]", "ao menos uma"),
-        ('[{"numero": 4, "tipo": "uma"}]', "faixa 4 não existe"),
         ('[{"numero": 1, "tipo": "uma"}, {"numero": 1, "tipo": "varias"}]', "mais de uma vez"),
     ],
 )

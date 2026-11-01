@@ -16,6 +16,7 @@ lotes, e não uma requisição por linha.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
@@ -59,12 +60,28 @@ NOMES = {
     "ur": "Urdu", "uz": "Uzbeque", "vi": "Vietnamita", "xh": "Xhosa",
     "yi": "Iídiche", "yo": "Iorubá", "zh": "Chinês",
     "zh-CN": "Chinês (simplificado)", "zh-TW": "Chinês (tradicional)", "zu": "Zulu",
+    # Só o Whisper reconhece estes (idiomas do áudio):
+    "ba": "Bashkir", "bo": "Tibetano", "br": "Bretão", "fo": "Feroês",
+    "nn": "Norueguês (nynorsk)", "oc": "Occitano", "yue": "Cantonês",
 }
 
 
 def nome(codigo: str, padrao: str | None = None) -> str:
     """Nome em português de um código de idioma."""
     return NOMES.get(codigo) or padrao or codigo
+
+
+def _sem_acento(texto: str) -> str:
+    decomposto = unicodedata.normalize("NFD", texto)
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
+
+
+def em_ordem(idiomas: dict[str, str]) -> list[dict[str, str]]:
+    """`[{codigo, nome}]` em ordem alfabética do nome, ignorando acentos."""
+    return [
+        {"codigo": codigo, "nome": nome_}
+        for codigo, nome_ in sorted(idiomas.items(), key=lambda par: _sem_acento(par[1]))
+    ]
 
 
 class Motor(Protocol):

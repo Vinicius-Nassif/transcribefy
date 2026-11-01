@@ -31,6 +31,7 @@ DIAS_PADRAO = 7
 
 AGUARDANDO = "aguardando"
 FALHOU = "falhou"
+RECUSADO = "recusado"  # pedia uma faixa que o arquivo não tem; aguarda nova configuração
 
 
 @dataclass(slots=True)
@@ -100,13 +101,17 @@ def copia(pasta: Path) -> Path | None:
     return caminho
 
 
-def marcar(pasta: Path, estado: str, erro: str | None = None) -> None:
-    """Atualiza o estado e a data do registro, se ele existir."""
+def marcar(
+    pasta: Path, estado: str, erro: str | None = None, parametros: dict | None = None
+) -> None:
+    """Atualiza o estado e a data do registro (e os parâmetros, se vierem)."""
     registro = ler(pasta)
     if registro is None:
         return
     registro.estado = estado
     registro.erro = erro
+    if parametros is not None:
+        registro.parametros = dict(parametros)
     registro.atualizado_em = time.time()
     _gravar(Path(pasta), registro)
 
