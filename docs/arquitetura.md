@@ -264,6 +264,12 @@ montar a `Configuracao` e consumir o `Resultado`.
 
 O `pytest` já faz parte do `requirements.txt`, com a versão fixa.
 
+A mesma suíte roda no GitHub Actions a cada push e a cada pull request, no Linux
+e no Windows, com Python 3.12 e as versões fixas do `requirements.txt`
+([`.github/workflows/testes.yml`](../.github/workflows/testes.yml)). Rodar nas
+duas plataformas é o que pega o que só quebra no Windows — codificação, fim de
+linha dos scripts, caminhos.
+
 Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa, os
 vetores de voz são sintéticos e os segmentos do Whisper vêm de objetos falsos. Isso
 mantém a suíte rápida o bastante para rodar a cada alteração.

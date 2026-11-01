@@ -140,5 +140,5 @@ scripts/teste-container.sh              # a imagem inteira, de ponta a ponta
 ```
 
 O `pytest` já vem no `requirements.txt`. Os testes não precisam de modelos nem de
-rede. A organização dos módulos e os pontos de extensão estão em
+rede, e rodam no GitHub Actions (Linux e Windows) a cada push e pull request. A organização dos módulos e os pontos de extensão estão em
 [`docs/arquitetura.md`](docs/arquitetura.md).

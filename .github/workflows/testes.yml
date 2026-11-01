@@ -1,0 +1,56 @@
+# Roda a suíte do pytest a cada push e a cada pull request, no Linux e no Windows.
+#
+# Os testes não precisam de modelos, GPU nem rede (além da instalação das
+# dependências), então cabem num runner comum do GitHub em poucos minutos.
+
+name: Testes
+
+on:
+  push:
+  pull_request:
+
+# Um push novo no mesmo branch cancela a execução anterior, que já ficou velha.
+concurrency:
+  group: testes-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      # Uma plataforma falhando não interrompe a outra: queremos ver as duas.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      # 3.12 é a versão do projeto: a mesma do `uv venv --python 3.12` do guia,
+      # da imagem `python:3.12-slim` do Dockerfile e do mínimo do pyproject.toml.
+      # As versões fixas do requirements.txt foram testadas nela.
+      - name: Instalar o Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # Mesmo procedimento do guia de uso e do Dockerfile: as versões exatas do
+      # requirements.txt e o projeto em modo editável, sem resolver de novo.
+      # O requirements-gpu.txt fica de fora: os runners não têm GPU.
+      - name: Instalar as dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e . --no-deps
+
+      - name: Rodar os testes
+        run: python -m pytest tests -q

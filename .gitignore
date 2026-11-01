@@ -12,3 +12,6 @@ saida/
 .uploads/
 .env
 docker-compose.override.yml
+
+# Experimentos e medições locais (modelos de centenas de MB): nunca versionar.
+.medicoes/
