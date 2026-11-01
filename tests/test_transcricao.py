@@ -67,15 +67,39 @@ def test_wav_fora_do_formato_nao_e_valido(tmp_path, formato):
     assert not transcricao.wav_valido(gerar_wav(tmp_path / "x.wav", **formato))
 
 
-@pytest.mark.xfail(
-    strict=True, raises=Exception,
-    reason="Defeito conhecido: o pytranscript só devolve False para 'unknown "
-    "format'; um arquivo que nem começa com RIFF lança wave.Error.",
+@pytest.mark.parametrize(
+    "conteudo",
+    [b"isto nao e um wav", b"", b"RIFF\x00\x00"],
+    ids=["outro-formato", "vazio", "truncado"],
 )
-def test_arquivo_que_nao_e_wav_nao_e_valido(tmp_path):
+def test_arquivo_que_nao_e_wav_nao_e_valido(tmp_path, conteudo):
+    """Antes lançava wave.Error, herdado do pytranscript, em vez de responder False."""
+    falso = tmp_path / "x.wav"
+    falso.write_bytes(conteudo)
+    assert not transcricao.wav_valido(falso)
+
+
+def test_a_verificacao_nao_deixa_o_arquivo_aberto(wav):
+    """No Windows, um arquivo aberto não pode ser apagado nem substituído."""
+    transcricao.wav_valido(wav)
+    wav.unlink()  # falharia no Windows com o arquivo ainda aberto
+    assert not wav.exists()
+
+
+def test_preparar_converte_um_arquivo_que_nao_e_wav(tmp_path, monkeypatch):
+    """Era o caso que o defeito quebrava: um mp3 ou mp4 nem chegava a ser convertido."""
+    origem = tmp_path / "sessao.mp3"
+    origem.write_bytes(b"ID3 mp3 qualquer")
+    monkeypatch.setattr(transcricao.pytranscript, "to_valid_wav", lambda o, d: d)
+    assert transcricao.preparar_wav(origem, tmp_path / "s.wav") == tmp_path / "s.wav"
+
+
+def test_arquivo_que_nao_e_wav_e_recusado_com_o_erro_documentado(tmp_path, motores):
     falso = tmp_path / "x.wav"
     falso.write_bytes(b"isto nao e um wav")
-    assert not transcricao.wav_valido(falso)
+    with pytest.raises(TypeError, match="WAV mono"):
+        transcricao.transcrever(falso, whisper())
+    assert motores == {}
 
 
 # --- preparar_wav ------------------------------------------------------------

@@ -7,6 +7,7 @@ transcrição de um WAV informando o modelo já resolvido e recebe uma lista de
 
 from __future__ import annotations
 
+import wave
 from collections.abc import Callable
 from pathlib import Path
 
@@ -31,8 +32,23 @@ Progresso = Callable[[float], None]
 
 
 def wav_valido(caminho: Path) -> bool:
-    """True se o arquivo já é um WAV mono PCM 16 bits aceito pelos motores."""
-    return pytranscript._is_valid_wav_file(Path(caminho))
+    """True se o arquivo já é um WAV mono PCM 16 bits aceito pelos motores.
+
+    Qualquer outra coisa — WAV em outro formato, outro tipo de áudio, um vídeo,
+    um arquivo truncado — é False, e não exceção: é a resposta que o
+    `preparar_wav` usa para decidir converter. Fazemos a checagem aqui em vez
+    de usar a do `pytranscript`, que lança `wave.Error` para o que nem começa
+    como WAV e deixa o arquivo aberto (o que o trava no Windows).
+    """
+    try:
+        with wave.open(str(caminho), "rb") as arquivo:
+            return (
+                arquivo.getnchannels() == 1
+                and arquivo.getcomptype() == "NONE"
+                and arquivo.getsampwidth() == 2
+            )
+    except (wave.Error, EOFError):
+        return False
 
 
 def preparar_wav(origem: Path, destino: Path | None = None) -> Path:
