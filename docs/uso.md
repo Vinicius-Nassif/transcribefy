@@ -321,7 +321,8 @@ estiver ativo; `Ctrl+C` encerra. Para trocar a porta: `--porta 8080`.
 > **Para a gravação completa, prefira a linha de comando.** A interface web copia o
 > arquivo inteiro para `dados/trabalhos/` durante o envio. Numa sessão de três
 > horas, isso significa vários GB duplicados em disco e um upload demorado pelo
-> navegador. A CLI lê o arquivo onde ele já está.
+> navegador. A CLI lê o arquivo onde ele já está — e nunca o apaga. A cópia da
+> interface web é temporária: veja a [seção 8](#cópia-do-vídeo-enviado-pela-web).
 
 Se preferir ativar a venv em vez de chamar `.venv/bin/` a cada comando, rode
 `source .venv/bin/activate` e depois use só `transcritor`.
@@ -420,7 +421,8 @@ campos do formulário.
 | `transcritor faixas <arquivo>` | Lista as trilhas de áudio e a duração. |
 | `transcritor modelos` | Mostra os modelos disponíveis e quais já estão em cache. |
 | `transcritor modelos --baixar preciso` | Baixa um modelo antes de precisar dele. |
-| `transcritor web` | Sobe a interface no navegador. |
+| `transcritor web` | Sobe a interface no navegador. Ao subir, apaga as cópias de envios que falharam há mais de 7 dias. |
+| `transcritor limpar [--dias 7]` | Lista as cópias de vídeo guardadas de envios pela web que falharam e as apaga depois de você confirmar (`--sim` dispensa a pergunta). |
 | `transcritor transcrever <arquivo>` | Transcreve. |
 
 ---
@@ -623,14 +625,28 @@ apagaria a interrupção da linha do tempo.
 | Interface | Caminho |
 |---|---|
 | Linha de comando | O que você passou em `-o`. Sem essa opção, `saida/<nome-do-vídeo>`, **relativo à pasta de onde o comando foi chamado**. |
-| Web | `dados/trabalhos/<código>/`, um diretório por envio, com a cópia do vídeo enviado ao lado das transcrições. |
+| Web | `dados/trabalhos/<código>/`, um diretório por envio. |
 
 A página de resultado oferece cada arquivo para download, o que costuma ser a forma
 mais direta de tirá-los dali — principalmente se o navegador está noutra máquina.
+As transcrições não são apagadas sozinhas: depois de baixar o que interessa,
+`rm -rf dados/trabalhos/<código>`.
 
-> **A pasta `dados/` só cresce.** Nada apaga os trabalhos antigos, e cada um guarda
-> uma cópia do vídeo — vários GB por sessão. Depois de baixar o que interessa,
-> `rm -rf dados/trabalhos/<código>`.
+#### Cópia do vídeo enviado pela web
+
+O navegador envia o conteúdo do vídeo, não o caminho dele, então o servidor grava
+uma cópia na pasta do trabalho. Essa cópia é temporária:
+
+| A transcrição... | A cópia |
+|---|---|
+| terminou | É apagada. As transcrições ficam. |
+| falhou | Fica, com um `trabalho.json` ao lado, para tentar de novo sem reenviar o arquivo (`POST /api/trabalhos/<código>/tentar-novamente`). Funciona mesmo depois de reiniciar o servidor. |
+| falhou há mais de 7 dias | É apagada ao subir a interface web, ou quando você roda `transcritor limpar`. |
+
+Só se apaga o arquivo que o `trabalho.json` aponta, dentro da pasta do próprio
+trabalho. O vídeo original, no seu computador, e os arquivos passados pela linha
+de comando nunca são apagados. Pastas de envios feitos antes desta regra não têm
+`trabalho.json` e também não são tocadas: apague-as à mão, se quiser.
 
 Rodando em container, esses mesmos caminhos ficam dentro dele e aparecem no host
 conforme os volumes montados:

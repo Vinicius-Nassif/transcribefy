@@ -179,17 +179,20 @@ O diretório de trabalho do container é `/app`, então um caminho relativo como
 isso que o mesmo comando funciona dentro e fora do container.
 
 Pela interface web, cada envio ganha um diretório próprio em `dados/trabalhos/`,
-identificado por um código, com **a cópia do vídeo enviado** ao lado das
-transcrições. A página de resultado oferece cada arquivo para download, o que
-costuma ser o caminho mais curto para tirá-los dali.
+identificado por um código. A **cópia do vídeo enviado** fica ali só enquanto é
+útil: some quando a transcrição termina, e fica para uma nova tentativa quando ela
+falha ([detalhes](uso.md#cópia-do-vídeo-enviado-pela-web)). A página de resultado
+oferece cada arquivo para download, o que costuma ser o caminho mais curto para
+tirá-los dali.
 
 > **Sem volume montado, a transcrição fica presa no container.** Um
 > `docker run --rm` sem `-v` a descarta junto com o container ao terminar. Com o
 > compose isso não acontece: as três pastas estão montadas.
 
-> **A pasta `dados/` só cresce.** Nada apaga os trabalhos antigos, e cada um guarda
-> uma cópia do vídeo — vários GB por sessão. De tempos em tempos, limpe o que já foi
-> baixado: `rm -rf dados/trabalhos/<id>`.
+> **As transcrições em `dados/` não são apagadas sozinhas.** As cópias de vídeo de
+> envios que falharam são removidas ao subir o container depois de 7 dias, ou na
+> hora com `docker compose run --rm transcribefy limpar`. O resto, limpe à mão
+> depois de baixar: `rm -rf dados/trabalhos/<id>`.
 
 ### Levar os arquivos para o Windows
 

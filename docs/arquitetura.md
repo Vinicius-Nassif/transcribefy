@@ -62,8 +62,9 @@ flowchart TD
 | `diarizacao.py` | Agrupa os x-vectors em locutores | `fala`, `numpy`, `scipy` |
 | `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
 | `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
+| `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
-| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `ffmpeg_tools`, `modelos`, `saida` |
+| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `ffmpeg_tools`, `modelos`, `saida`, `copias` |
 
 A dependência anda sempre para cima nesta tabela: nenhum módulo importa outro que
 esteja abaixo dele. `fala.py` não importa nada — nem do projeto, nem de fora —, e é
@@ -160,7 +161,7 @@ aponta o cache dos modelos para um volume.
 | `/app` | Código, instalado em modo editável. Diretório de trabalho, o que faz `-o saida/...` cair em `/app/saida`. |
 | `/modelos` | Cache dos modelos de fala (Whisper e Vosk), em volume nomeado. |
 | `/midia` | Gravações de entrada, somente leitura. |
-| `/app/dados` | `RAIZ_TRABALHOS` do `web.py`, que é relativa ao diretório de trabalho. |
+| `/app/dados` | `RAIZ_TRABALHOS` do `web.py` (vem de `copias.RAIZ_PADRAO`, o mesmo padrão do `transcritor limpar`), relativa ao diretório de trabalho. |
 
 Ao mexer nesses caminhos, lembre que `web.py` resolve `dados/trabalhos` a partir do
 diretório de trabalho: mudar o `WORKDIR` muda onde os envios da interface caem.
@@ -285,6 +286,8 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_saida.py` | Formatos, tempos das legendas, falas simultâneas e tradução parcial |
 | `test_pipeline.py` | Validações e montagem do contexto antes de transcrever |
 | `test_web.py` | Contrato entre a API e o formulário da página |
+| `test_copias.py` | O que a limpeza pode e nunca pode apagar |
+| `test_web_temporario.py` | Cópia do envio: apagada no sucesso, guardada na falha, nova tentativa, limpeza; e a CLI que nunca apaga |
 | `test_instalacao.py` | O que a instalação no Windows exige do empacotamento |
 
 ### O teste do container

@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import ffmpeg_tools, modelos, pipeline, saida
+from . import copias, ffmpeg_tools, modelos, pipeline, saida
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -27,6 +27,7 @@ def _parser() -> argparse.ArgumentParser:
             "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
             "  transcritor diagnostico\n"
+            "  transcritor limpar --dias 7\n"
         ),
     )
     sub = p.add_subparsers(dest="comando", required=True)
@@ -42,6 +43,28 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "diagnostico",
         help="mostra tudo que decide se uma transcrição vai funcionar",
+    )
+
+    limpar = sub.add_parser(
+        "limpar",
+        help="apaga as cópias de vídeo de envios pela web que falharam há tempo",
+        description=(
+            "Apaga as cópias de vídeo que a interface web guarda quando uma "
+            "transcrição falha. Só toca nas cópias recebidas pela página, nunca "
+            "nos arquivos originais nem nos passados pela linha de comando, e "
+            "mantém as transcrições geradas."
+        ),
+    )
+    limpar.add_argument(
+        "--dias", type=float, default=copias.DIAS_PADRAO,
+        help=f"idade mínima da cópia, em dias (padrão: {copias.DIAS_PADRAO})",
+    )
+    limpar.add_argument(
+        "--pasta", type=Path, default=copias.RAIZ_PADRAO,
+        help=f"pasta dos trabalhos da interface web (padrão: {copias.RAIZ_PADRAO})",
+    )
+    limpar.add_argument(
+        "-s", "--sim", action="store_true", help="remove sem pedir confirmação"
     )
 
     web = sub.add_parser("web", help="sobe a interface de envio de vídeo no navegador")
@@ -181,6 +204,37 @@ def _cmd_diagnostico(args) -> int:
     return 0
 
 
+def _cmd_limpar(args) -> int:
+    """Mostra as cópias que serão removidas e só remove depois de confirmar."""
+    candidatas = copias.antigas(args.pasta, args.dias)
+    if not candidatas:
+        print(f"Nenhuma cópia com mais de {args.dias:g} dia(s) em {args.pasta}.")
+        return 0
+
+    print(f"Cópias de envios pela web sem mudança há mais de {args.dias:g} dia(s):\n")
+    for item in candidatas:
+        motivo = f" — {item.erro}" if item.erro else ""
+        print(
+            f"  {item.video}  ({item.tamanho / 1e6:,.1f} MB, "
+            f"{item.dias:.0f} dia(s)){motivo[:80]}"
+        )
+    total = sum(item.tamanho for item in candidatas) / 1e6
+    print(f"\n{len(candidatas)} cópia(s), {total:,.1f} MB. As transcrições ficam.")
+
+    if not args.sim:
+        try:
+            resposta = input("Remover? [s/N] ")
+        except EOFError:
+            resposta = ""
+        if resposta.strip().lower() not in {"s", "sim"}:
+            print("Nada foi removido.")
+            return 0
+
+    removidas = copias.remover(candidatas)
+    print(f"{len(removidas)} cópia(s) removida(s).")
+    return 0
+
+
 def _cmd_web(args) -> int:
     import uvicorn
 
@@ -261,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         "faixas": _cmd_faixas,
         "modelos": _cmd_modelos,
         "diagnostico": _cmd_diagnostico,
+        "limpar": _cmd_limpar,
         "web": _cmd_web,
         "transcrever": _cmd_transcrever,
     }

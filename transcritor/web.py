@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import threading
 import traceback
 import uuid
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import ffmpeg_tools, modelos, pipeline, saida
+from . import copias, ffmpeg_tools, modelos, pipeline, saida
 
-RAIZ_TRABALHOS = Path("dados/trabalhos")
+RAIZ_TRABALHOS = copias.RAIZ_PADRAO
 PAGINA = Path(__file__).parent / "web_static" / "index.html"
 
 # Uma transcrição por vez: o modelo de fala já satura a GPU (ou os núcleos).
@@ -37,6 +40,7 @@ class Trabalho:
     duracao: float = 0.0
     avisos: list[str] = field(default_factory=list)
     previa: list[dict] = field(default_factory=list)
+    pasta: Path | None = field(default=None, repr=False)
 
     def como_dict(self) -> dict:
         return {
@@ -57,7 +61,32 @@ class Trabalho:
 
 _trabalhos: dict[str, Trabalho] = {}
 
-app = FastAPI(title="Transcritor de sessões", docs_url="/api/docs")
+# Os identificadores são gerados aqui (`uuid4().hex[:12]`); qualquer outra coisa
+# vinda da URL é recusada antes de virar caminho de pasta.
+_ID_VALIDO = re.compile(r"[0-9a-f]{12}")
+
+
+def limpar_copias_antigas(dias: float = copias.DIAS_PADRAO) -> list[Path]:
+    """Apaga as cópias de envios que falharam há mais de `dias` dias."""
+    removidas = copias.remover(copias.antigas(RAIZ_TRABALHOS, dias))
+    for video in removidas:
+        print(f"Cópia de envio antigo removida: {video}")
+    return removidas
+
+
+@asynccontextmanager
+async def _ciclo_de_vida(_app: FastAPI) -> AsyncIterator[None]:
+    # Uma limpeza que falhe não pode impedir a interface de subir.
+    try:
+        limpar_copias_antigas()
+    except OSError as erro:
+        print(f"Aviso: a limpeza das cópias antigas falhou: {erro}")
+    yield
+
+
+app = FastAPI(
+    title="Transcritor de sessões", docs_url="/api/docs", lifespan=_ciclo_de_vida
+)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -111,6 +140,13 @@ async def criar_trabalho(
     juntar: bool = Form(True),
 ) -> JSONResponse:
     """Recebe o vídeo e enfileira a transcrição."""
+    parametros = {
+        "modelo": modelo, "faixa_gm": faixa_gm, "faixa_grupo": faixa_grupo,
+        "nome_gm": nome_gm, "jogadores": jogadores, "nomes": nomes,
+        "formatos": formatos, "idioma": idioma, "traduzir": traduzir,
+        "contexto": contexto, "deslocamento": deslocamento, "inicio": inicio,
+        "fim": fim, "juntar": juntar,
+    }
     identificador = uuid.uuid4().hex[:12]
     pasta = RAIZ_TRABALHOS / identificador
     pasta.mkdir(parents=True, exist_ok=True)
@@ -137,31 +173,82 @@ async def criar_trabalho(
             ),
         )
 
-    config = pipeline.Configuracao(
-        video=caminho_video,
-        destino=pasta / Path(nome).stem,
-        modelo_fala=modelo,
-        faixa_gm=faixa_gm - 1,
-        faixa_grupo=faixa_grupo - 1,
-        nome_gm=nome_gm.strip() or "GM",
-        n_jogadores=None if jogadores.strip().lower() == "auto" else int(jogadores),
-        nomes_jogadores=[n.strip() for n in nomes.split(",") if n.strip()],
-        formatos=[f.strip() for f in formatos.split(",") if f.strip()],
-        idioma=idioma,
-        traduzir_para=traduzir.strip() or None,
-        contexto=contexto,
-        deslocamento_grupo=deslocamento,
-        inicio=inicio,
-        fim=float(fim) if fim.strip() else None,
-        juntar_falas=juntar,
-    )
+    try:
+        config = _configuracao(parametros, caminho_video, pasta)
+    except ValueError as erro:
+        shutil.rmtree(pasta, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(erro)) from erro
+    copias.registrar(pasta, nome, parametros)
 
-    trabalho = Trabalho(id=identificador, nome_video=nome)
+    trabalho = Trabalho(id=identificador, nome_video=nome, pasta=pasta)
     with _trava:
         _trabalhos[identificador] = trabalho
     _executor.submit(_processar, trabalho, config)
 
     return JSONResponse({"id": identificador, "faixas": [f.rotulo for f in faixas]})
+
+
+def _configuracao(parametros: dict, video: Path, pasta: Path) -> pipeline.Configuracao:
+    """Monta a configuração a partir dos campos do formulário.
+
+    É a mesma função no envio e na nova tentativa, que relê os parâmetros
+    gravados no registro da cópia: as duas não têm como divergir.
+    """
+    p = parametros
+    jogadores = str(p["jogadores"]).strip()
+    fim = str(p["fim"]).strip()
+    return pipeline.Configuracao(
+        video=video,
+        destino=pasta / Path(video.name).stem,
+        modelo_fala=p["modelo"],
+        faixa_gm=int(p["faixa_gm"]) - 1,
+        faixa_grupo=int(p["faixa_grupo"]) - 1,
+        nome_gm=p["nome_gm"].strip() or "GM",
+        n_jogadores=None if jogadores.lower() == "auto" else int(jogadores),
+        nomes_jogadores=[n.strip() for n in p["nomes"].split(",") if n.strip()],
+        formatos=[f.strip() for f in p["formatos"].split(",") if f.strip()],
+        idioma=p["idioma"],
+        traduzir_para=p["traduzir"].strip() or None,
+        contexto=p["contexto"],
+        deslocamento_grupo=float(p["deslocamento"]),
+        inicio=float(p["inicio"]),
+        fim=float(fim) if fim else None,
+        juntar_falas=bool(p["juntar"]),
+    )
+
+
+@app.post("/api/trabalhos/{identificador}/tentar-novamente")
+def tentar_novamente(identificador: str) -> JSONResponse:
+    """Reprocessa um trabalho que falhou, com a cópia do vídeo guardada no envio.
+
+    Também serve para um trabalho interrompido por uma queda do servidor: o que
+    vale é a cópia e o registro em disco, não a memória do processo.
+    """
+    if not _ID_VALIDO.fullmatch(identificador):
+        raise HTTPException(status_code=404, detail="Trabalho não encontrado")
+    pasta = RAIZ_TRABALHOS / identificador
+    with _trava:
+        atual = _trabalhos.get(identificador)
+        if atual is not None and atual.estado != "erro":
+            raise HTTPException(
+                status_code=409,
+                detail=f"O trabalho está {atual.estado}; só um trabalho que falhou "
+                "pode ser tentado de novo.",
+            )
+        registro = copias.ler(pasta)
+        video = copias.copia(pasta)
+        if registro is None or video is None:
+            raise HTTPException(
+                status_code=404,
+                detail="A cópia do vídeo deste trabalho não existe mais. "
+                "Envie o arquivo de novo.",
+            )
+        config = _configuracao(registro.parametros, video, pasta)
+        copias.marcar(pasta, copias.AGUARDANDO)
+        trabalho = Trabalho(id=identificador, nome_video=registro.video, pasta=pasta)
+        _trabalhos[identificador] = trabalho
+    _executor.submit(_processar, trabalho, config)
+    return JSONResponse({"id": identificador})
 
 
 def _processar(trabalho: Trabalho, config: pipeline.Configuracao) -> None:
@@ -177,7 +264,18 @@ def _processar(trabalho: Trabalho, config: pipeline.Configuracao) -> None:
         trabalho.mensagem = "Falhou"
         trabalho.erro = str(erro) or erro.__class__.__name__
         traceback.print_exc()
+        if trabalho.pasta is not None:
+            # A cópia fica, para que o trabalho possa ser tentado de novo.
+            copias.marcar_falha(trabalho.pasta, trabalho.erro)
         return
+
+    if trabalho.pasta is not None:
+        try:
+            copias.concluir(trabalho.pasta)
+        except OSError as erro:
+            resultado.avisos.append(
+                f"A transcrição terminou, mas a cópia do vídeo não pôde ser apagada: {erro}"
+            )
 
     trabalho.estado = "concluido"
     trabalho.mensagem = "Concluído"
