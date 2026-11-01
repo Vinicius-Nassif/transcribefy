@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import copias, ffmpeg_tools, modelos, pipeline, progresso, saida
+from . import copias, ffmpeg_tools, modelos, pipeline, progresso, saida, traducao
 from . import faixas as arranjo  # `faixas` é o nome do campo do formulário
 
 RAIZ_TRABALHOS = copias.RAIZ_PADRAO
@@ -224,7 +224,7 @@ def _configuracao(parametros: dict, video: Path, pasta: Path) -> pipeline.Config
         faixas=_faixas_do_formulario(p),
         formatos=[f.strip() for f in p["formatos"].split(",") if f.strip()],
         idioma=p["idioma"],
-        traduzir_para=p["traduzir"].strip() or None,
+        traducoes=traducao.validar_destinos(p["traduzir"].split(",")),
         contexto=p["contexto"],
         inicio=float(p["inicio"]),
         fim=float(fim) if fim else None,

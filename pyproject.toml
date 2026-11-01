@@ -5,6 +5,9 @@ description = "Transcricao mesclada de videos OBS com 2 faixas de audio, com sep
 requires-python = ">=3.12"
 dependencies = [
     "pytranscript>=0.3.0",
+    # Tradução pelo Google Tradutor (traducao.py). Já vinha com o pytranscript;
+    # é declarada porque o projeto passou a usá-la diretamente.
+    "deep-translator>=1.11",
     "faster-whisper>=1.1",
     "vosk>=0.3.45",
     "numpy>=1.26",

@@ -424,7 +424,7 @@ campos do formulário.
 | `--idioma` | `pt` | Idioma do áudio; `auto` deixa o modelo detectar. Também é o idioma de origem da tradução. |
 | `--contexto` | — | Nomes, lugares e jargão da mesa, em texto corrido. É o ajuste que mais reduz erro em nome próprio. |
 | `--dispositivo` | `auto` | `auto`, `cuda` ou `cpu`. Onde o Whisper roda. |
-| `--traduzir` | desligado | Gera também a versão traduzida, ex.: `en`. Única etapa que usa a internet. |
+| `--traduzir` | desligado | Gera também versões traduzidas, uma por idioma, ex.: `en,es`. Única etapa que usa a internet. |
 | `--inicio` | `0` | Segundo em que a transcrição começa. |
 | `--fim` | fim do vídeo | Segundo em que termina. |
 | `--deslocamento` | `0` | Move uma faixa no tempo, em segundos, para corrigir dessincronia. `N=SEG` vale para a faixa N, em qualquer estilo, e pode ser repetido; um número sozinho move a faixa dos jogadores e é do estilo antigo. |
@@ -438,6 +438,7 @@ campos do formulário.
 | `transcritor faixas <arquivo>` | Lista as trilhas de áudio e a duração. |
 | `transcritor modelos` | Mostra os modelos disponíveis e quais já estão em cache. |
 | `transcritor modelos --baixar preciso` | Baixa um modelo antes de precisar dele. |
+| `transcritor idiomas` | Lista os idiomas para os quais a transcrição pode ser traduzida. |
 | `transcritor web` | Sobe a interface no navegador. Ao subir, apaga as cópias de envios que falharam há mais de 7 dias. |
 | `transcritor limpar [--dias 7]` | Lista as cópias de vídeo guardadas de envios pela web que falharam e as apaga depois de você confirmar (`--sim` dispensa a pergunta). |
 | `transcritor transcrever <arquivo>` | Transcreve. |
@@ -606,9 +607,20 @@ quando o destino é legenda —, use `--sem-juntar`.
 
 ### Tradução
 
-O `--traduzir en` gera, além dos arquivos normais, uma segunda leva com o sufixo do
-idioma. Linhas que a tradução não conseguir cobrir voltam no idioma original, e o
-número delas é informado ao final.
+O `--traduzir en,es` gera, além dos arquivos normais, uma leva por idioma, com o
+sufixo dele (`sessao.en.srt`, `sessao.es.srt`…). O Markdown sai só no original.
+`transcritor idiomas` lista os códigos aceitos — são os do motor de tradução ativo,
+o Google Tradutor, com o nome em português.
+
+Só o texto de cada fala é traduzido; o nome de quem fala fica como está. As falas
+vão em lotes, e não uma requisição por fala: numa sessão de três horas, são
+dezenas de requisições em vez de milhares. Linhas que a tradução não conseguir
+cobrir voltam no idioma original, no lugar delas, e o número é informado ao final.
+
+> **"falhou por inteiro".** O Google às vezes passa a recusar uma máquina que fez
+> requisições demais — inclusive por conta de outros programas na mesma rede. A
+> transcrição sai completa no original, com o aviso, e basta tentar a tradução
+> mais tarde.
 
 > Esta é a **única** etapa que sai da sua máquina: o texto é enviado ao Google
 > Tradutor. Todo o resto — extração de áudio, reconhecimento e separação de vozes —

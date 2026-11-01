@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import copias, faixas, ffmpeg_tools, modelos, pipeline, progresso, saida
+from . import copias, faixas, ffmpeg_tools, modelos, pipeline, progresso, saida, traducao
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -30,6 +30,7 @@ def _parser() -> argparse.ArgumentParser:
             "      --faixa 2=varias:3:Ana,Bruno,Caio --faixa 3=Duda\n"
             "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
+            "  transcritor transcrever sessao.mp4 --traduzir en,es\n"
             "  transcritor diagnostico\n"
             "  transcritor limpar --dias 7\n"
         ),
@@ -42,6 +43,11 @@ def _parser() -> argparse.ArgumentParser:
     lista = sub.add_parser("modelos", help="lista e baixa os modelos de fala")
     lista.add_argument(
         "--baixar", metavar="APELIDO", help="baixa um modelo de fala antecipadamente"
+    )
+
+    sub.add_parser(
+        "idiomas",
+        help="lista os idiomas para os quais a transcrição pode ser traduzida",
     )
 
     sub.add_parser(
@@ -122,7 +128,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     t.add_argument(
         "--idioma", default="pt",
-        help="idioma do áudio ('auto' detecta); também define o alvo da tradução",
+        help="idioma do áudio ('auto' detecta); é a origem da tradução",
     )
     t.add_argument(
         "--contexto", default="",
@@ -136,8 +142,12 @@ def _parser() -> argparse.ArgumentParser:
         help="onde rodar o Whisper; 'auto' usa a GPU quando houver",
     )
     t.add_argument(
-        "--traduzir", default=None, metavar="IDIOMA",
-        help="também gera a transcrição traduzida (ex.: en, es)",
+        "--traduzir", default="", metavar="IDIOMAS",
+        help=(
+            "também gera a transcrição traduzida para cada idioma, separados "
+            "por vírgula (ex.: en,es). `transcritor idiomas` lista os códigos. "
+            "Usa a internet: o texto vai para o Google Tradutor"
+        ),
     )
     t.add_argument(
         "--deslocamento", action="append", type=_tipo(faixas.ler_deslocamento),
@@ -261,6 +271,15 @@ def _cmd_modelos(args) -> int:
     return 0
 
 
+def _cmd_idiomas(args) -> int:
+    motor = traducao.motor()
+    print(f"Motor de tradução: {motor.descricao}\n")
+    for codigo, nome in sorted(motor.idiomas().items(), key=lambda par: par[1]):
+        print(f"  {codigo:<9} {nome}")
+    print("\nUso: transcritor transcrever sessao.mp4 --traduzir en,es")
+    return 0
+
+
 def _cmd_diagnostico(args) -> int:
     """Reúne num lugar só o que costuma explicar uma transcrição que falhou."""
     import platform
@@ -344,7 +363,7 @@ def _cmd_transcrever(args) -> int:
         faixas=escolhidas,
         formatos=[f.strip() for f in args.formatos.split(",") if f.strip()],
         idioma=args.idioma,
-        traduzir_para=args.traduzir,
+        traducoes=traducao.validar_destinos(args.traduzir.split(",")),
         contexto=args.contexto,
         dispositivo=args.dispositivo,
         inicio=args.inicio,
@@ -432,6 +451,7 @@ def main(argv: list[str] | None = None) -> int:
         "faixas": _cmd_faixas,
         "modelos": _cmd_modelos,
         "diagnostico": _cmd_diagnostico,
+        "idiomas": _cmd_idiomas,
         "limpar": _cmd_limpar,
         "web": _cmd_web,
         "transcrever": _cmd_transcrever,

@@ -43,7 +43,7 @@ class Configuracao:
     faixas: Sequence[Faixa] = field(default_factory=faixas.padrao)
     formatos: Sequence[str] = saida.FORMATOS
     idioma: str = "pt"
-    traduzir_para: str | None = None
+    traducoes: Sequence[str] = ()
     contexto: str = ""
     dispositivo: str = "auto"
     inicio: float = 0.0
@@ -234,7 +234,7 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
         config.destino,
         formatos=config.formatos,
         idioma=config.idioma,
-        traduzir_para=config.traduzir_para,
+        traducoes=config.traducoes,
     )
 
     aviso("Concluído", 1.0)

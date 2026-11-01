@@ -129,3 +129,17 @@ def test_registro_anterior_ao_campo_faixas_ainda_pode_ser_tentado_de_novo(ambien
     assert gm.nome == "GM"
     assert (grupo.n_locutores, tuple(grupo.nomes)) == (5, ("Ana",))
     assert recebidas[0].video == Path(pasta / "sessao.mp4")
+
+
+def test_idioma_de_traducao_desconhecido_e_recusado(ambiente):
+    raiz, recebidas = ambiente
+    resposta = enviar({"traduzir": "en,klingon"})
+    assert resposta.status_code == 400
+    assert "klingon" in resposta.json()["detail"]
+    assert recebidas == [] and list(raiz.iterdir()) == []
+
+
+def test_varios_idiomas_de_traducao(ambiente):
+    _, recebidas = ambiente
+    assert enviar({"traduzir": "en,es"}).status_code == 200
+    assert list(recebidas[0].traducoes) == ["en", "es"]

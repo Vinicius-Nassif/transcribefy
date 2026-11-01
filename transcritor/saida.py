@@ -1,8 +1,8 @@
 """Geração dos arquivos de transcrição.
 
-O `pytranscript.Transcript` cuida dos formatos txt/csv/json/srt/vtt e da
-tradução. Estendemos a classe apenas para usar o tempo final real de cada fala
-nas legendas, em vez da estimativa de 5 segundos do original.
+O `pytranscript.Transcript` cuida dos formatos txt/csv/json/srt/vtt. Estendemos a
+classe apenas para usar o tempo final real de cada fala nas legendas, em vez da
+estimativa de 5 segundos do original. A tradução é do motor ativo em `traducao`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytranscript
 
-from . import mesclagem
+from . import mesclagem, traducao
 from .fala import Fala
 
 FORMATOS_PYTRANSCRIPT = ("txt", "csv", "json", "srt", "vtt")
@@ -128,47 +128,41 @@ class ArquivosGerados:
 
 
 def _traduzir(
-    transcript: TranscricaoComLocutores, alvo: str
+    falas: Sequence[Fala], origem: str, destino: str, motor: traducao.Motor
 ) -> tuple[TranscricaoComLocutores, list[str]]:
-    """Traduz via pytranscript, reinserindo as linhas que a tradução não cobriu.
+    """Traduz o texto de cada fala, mantendo locutor, início e fim.
 
-    O `Transcript.translate` descarta as linhas que falharam; aqui elas voltam no
-    idioma original, para que nada suma da transcrição e os tempos continuem alinhados.
+    Só o texto vai para o motor — o nome de quem fala não é traduzido. Uma
+    linha que o motor não conseguiu traduzir volta no idioma original, no
+    mesmo lugar: nada some da transcrição e os tempos continuam alinhados.
     """
-    simples, erros = transcript.translate(alvo)
-
-    # O tempo final viaja junto com a linha, e não por posição: a tradução
-    # devolve as linhas que deram certo e as que falharam em duas listas, e
-    # remontá-las por índice desalinharia os fins assim que uma linha falhasse.
-    finais: dict[float, list[float]] = {}
-    for inicio, fim in zip(transcript.time, transcript.tempos_finais, strict=False):
-        finais.setdefault(inicio, []).append(fim)
-
-    def fim_de(inicio: float) -> float:
-        pendentes = finais.get(inicio)
-        return pendentes.pop(0) if pendentes else inicio + DURACAO_MINIMA_LEGENDA
-
-    linhas = [
-        (t, texto, fim_de(t))
-        for t, texto in zip(simples.time, simples.text, strict=True)
-    ]
-    linhas.extend((erro.time, erro.line, fim_de(erro.time)) for erro in erros)
-    linhas.sort(key=lambda item: item[0])
-
-    traduzida = TranscricaoComLocutores(
-        time=[t for t, _, _ in linhas],
-        text=[texto for _, texto, _ in linhas],
-        language=alvo,
-        time_end=transcript.time_end,
-        tempos_finais=[fim for _, _, fim in linhas],
+    traduzidas = motor.traduzir([f.texto for f in falas], origem, destino)
+    falhas = 0
+    transcript = TranscricaoComLocutores(
+        language=destino,
+        tempos_finais=[f.fim for f in falas],
+        time_end=max((f.fim for f in falas), default=0.0),
     )
+    for fala, texto in zip(falas, traduzidas, strict=True):
+        if texto is None:
+            falhas += 1
+            texto = fala.texto
+        transcript.append(fala.inicio, f"{fala.locutor}: {texto}")
+
     avisos = []
-    if erros:
+    if falhas and falhas == len(falas):
         avisos.append(
-            f"{len(erros)} linha(s) não puderam ser traduzidas e ficaram no "
-            f"idioma original."
+            f"A tradução para {traducao.nome(destino)} falhou por inteiro "
+            f"({motor.descricao}); os arquivos .{destino}.* ficaram no idioma "
+            "original. Confira a conexão, ou tente mais tarde se o serviço "
+            "estiver limitando as requisições."
         )
-    return traduzida, avisos
+    elif falhas:
+        avisos.append(
+            f"{falhas} linha(s) não puderam ser traduzidas para "
+            f"{traducao.nome(destino)} e ficaram no idioma original."
+        )
+    return transcript, avisos
 
 
 def escrever(
@@ -176,7 +170,8 @@ def escrever(
     destino_base: Path,
     formatos: Sequence[str] = FORMATOS,
     idioma: str = "auto",
-    traduzir_para: str | None = None,
+    traducoes: Sequence[str] = (),
+    motor_traducao: traducao.Motor | None = None,
 ) -> ArquivosGerados:
     """Escreve a transcrição mesclada em todos os formatos pedidos.
 
@@ -185,7 +180,9 @@ def escrever(
         destino_base: caminho sem extensão (ex.: `saida/sessao-01`).
         formatos: subconjunto de `FORMATOS`.
         idioma: idioma de origem, usado na tradução.
-        traduzir_para: código de idioma alvo (ex.: "en"); None desativa a tradução.
+        traducoes: códigos dos idiomas de destino (ex.: ["en", "es"]); vazio
+            desativa a tradução. Cada um gera `<base>.<código>.<formato>`.
+        motor_traducao: o motor a usar; o padrão é o ativo em `traducao`.
 
     Returns:
         Os caminhos dos arquivos gerados e eventuais avisos.
@@ -207,13 +204,14 @@ def escrever(
     detalhado.write_text(para_json_detalhado(falas), encoding="utf-8")
     resultado.arquivos.append(detalhado)
 
-    if traduzir_para:
-        traduzida, avisos = _traduzir(transcript, traduzir_para)
+    motor = motor_traducao or (traducao.motor() if traducoes else None)
+    for destino in traducoes:
+        traduzida, avisos = _traduzir(falas, idioma, destino, motor)
         resultado.avisos.extend(avisos)
         for formato in formatos:
             if formato == "md":
                 continue
-            caminho = destino_base.with_suffix(f".{traduzir_para}.{formato}")
+            caminho = destino_base.with_suffix(f".{destino}.{formato}")
             _gravar(traduzida, caminho)
             resultado.arquivos.append(caminho)
 

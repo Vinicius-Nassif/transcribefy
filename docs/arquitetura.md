@@ -62,7 +62,8 @@ flowchart TD
 | `vozes.py` | Extrai o x-vector de cada trecho, seja qual for o motor | `fala`, `vosk`, `numpy` |
 | `diarizacao.py` | Agrupa os x-vectors em locutores | `fala`, `numpy`, `scipy` |
 | `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
-| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
+| `traducao.py` | Motores de tradução: registro, idiomas oferecidos e tradução em lotes conferidos | `deep_translator` |
+| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript`; traduz pelo motor ativo | `fala`, `mesclagem`, `traducao`, `pytranscript` |
 | `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
 | `progresso.py` | Custo de cada etapa por dispositivo e estimativa do tempo restante | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
@@ -238,8 +239,9 @@ foram estendidos em vez de substituídos:
   estimativa fixa de 5 segundos do original — e, diferente dele, não encurta uma
   legenda porque a seguinte começa antes: é o que preserva as interrupções.
   `to_vtt`, `write` e os demais formatos vêm de graça.
-- **`_traduzir`** (`saida.py`) reinsere as linhas que `Transcript.translate`
-  descartaria em silêncio, preservando o alinhamento dos tempos.
+
+A tradução, que antes também vinha do `pytranscript` (`Transcript.translate`, uma
+requisição por linha, descartando as que falhavam), passou para `traducao.py`.
 
 O laço de reconhecimento em `motor_vosk.py` é próprio, e não o
 `pytranscript.transcribe`, porque precisamos de dois dados que a função original
@@ -294,6 +296,28 @@ aceitos — nesse caso o motor é deduzido do conteúdo da pasta.
 
 Preencher os vetores de voz é opcional: quando o motor não os devolve, o `pipeline`
 chama `vozes.anexar_vetores` e a separação de locutores segue igual.
+
+### Adicionar ou trocar o motor de tradução
+
+Um motor é um objeto com `nome`, `descricao`, `online`, `idiomas()` —
+`{código: nome em português}` — e `traduzir(linhas, origem, destino)`, que
+devolve uma lista do mesmo tamanho, com None nas linhas que falharam.
+
+1. Escreva a classe em `traducao.py` (ou num módulo próprio, se for grande).
+2. Registre-a em `traducao.MOTORES`.
+3. Para torná-la a ativa, mude `traducao.PADRAO`.
+
+O resto acompanha sozinho: `transcritor idiomas`, a validação de `--traduzir` e
+do campo `traduzir` da API, e a lista de idiomas da interface web saem de
+`idiomas()` do motor ativo. `saida.escrever` só chama `traduzir`, e cuida de
+reinserir no original o que voltar como None.
+
+Um motor que conversa com um serviço por texto corrido pode reaproveitar
+`traducao.traduzir_em_lotes`: ela junta as linhas em lotes, **confere se cada
+lote volta com a mesma quantidade de linhas** e, se não voltar, refaz aquele lote
+linha por linha — sem isso, uma linha fundida pelo serviço deslocaria todas as
+traduções seguintes para a fala errada. Também desiste depois de
+`FALHAS_SEGUIDAS` lotes com erro, em vez de insistir sem rede.
 
 ### Trocar o algoritmo de separação de vozes
 
@@ -350,6 +374,7 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_cli.py` | Estilo novo, estilo antigo e a recusa de misturar os dois |
 | `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
 | `test_transcricao.py` | Validação do WAV e escolha do motor |
+| `test_traducao.py` | Lotes, conferência da quantidade de linhas, falhas, registro de motores e idiomas |
 | `test_progresso.py` | Quando há base para estimar, o texto do tempo restante, a API e a linha da CLI |
 | `test_web.py` | Contrato entre a API e o formulário da página |
 | `test_copias.py` | O que a limpeza pode e nunca pode apagar |
