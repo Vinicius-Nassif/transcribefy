@@ -1,12 +1,18 @@
 # Transcribefy
 
-Transcreve uma gravação do OBS **com duas faixas de áudio** e devolve uma
-transcrição única, em ordem cronológica, com cada linha atribuída a um locutor:
+Transcreve uma gravação do OBS **com várias faixas de áudio** e devolve uma
+transcrição única, em ordem cronológica, com cada linha atribuída a um locutor.
+Cada faixa é de um de dois tipos:
 
-- **Faixa 1** — o microfone do GM. Locutor único, rotulado direto.
-- **Faixa 2** — os jogadores. Separada em vozes distintas por agrupamento de x-vectors.
+- **Uma pessoa** — como o microfone do GM. Todas as falas recebem o nome dela.
+- **Várias pessoas** — como o Discord dos jogadores. Separada em vozes distintas
+  por agrupamento de x-vectors, com nomes opcionais.
 
-Quem interrompe não some: falas simultâneas das duas faixas são mantidas, cada uma
+Sem configuração, vale o arranjo de sempre: faixa 1 do GM, faixa 2 dos jogadores.
+Com `--faixa`, qualquer número de faixas, de qualquer tipo
+([detalhes](docs/uso.md#mais-de-duas-faixas)).
+
+Quem interrompe não some: falas simultâneas das faixas são mantidas, cada uma
 com o seu tempo real, e marcadas no `.detalhado.json`
 ([detalhes](docs/uso.md#falas-simultâneas)).
 
@@ -106,7 +112,7 @@ Windows a partir do WSL, no [guia de uso, seção 8](docs/uso.md#8-arquivos-gera
 
 ## Sobre a separação de vozes
 
-A faixa 1 não passa por diarização: é o GM, ponto. Só a faixa 2 é agrupada, com os
+Faixas de uma pessoa não passam por diarização: o nome é fixo. Só as de várias pessoas são agrupadas, com os
 x-vectors de 128 dimensões do modelo `vosk-model-spk-0.4`, agrupamento hierárquico
 por distância de cosseno e uma suavização temporal conservadora. Os vetores são
 extraídos trecho a trecho, depois do reconhecimento, então a separação de vozes não
@@ -140,5 +146,5 @@ scripts/teste-container.sh              # a imagem inteira, de ponta a ponta
 ```
 
 O `pytest` já vem no `requirements.txt`. Os testes não precisam de modelos nem de
-rede. A organização dos módulos e os pontos de extensão estão em
+rede, e rodam no GitHub Actions (Linux e Windows) a cada push e pull request. A organização dos módulos e os pontos de extensão estão em
 [`docs/arquitetura.md`](docs/arquitetura.md).

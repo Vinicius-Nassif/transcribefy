@@ -88,26 +88,84 @@ def test_escrever_respeita_o_subconjunto_de_formatos(tmp_path):
     assert {c.name for c in gerados.arquivos} == {"s.srt", "s.detalhado.json"}
 
 
-def test_traducao_reinsere_as_linhas_que_falharam(monkeypatch, tmp_path):
+class MotorFalso:
+    """Motor de tradução que só prefixa o idioma e falha nas linhas pedidas."""
+
+    nome = "falso"
+    descricao = "falso"
+    online = False
+
+    def __init__(self, falhar=()):
+        self.falhar = set(falhar)
+        self.chamadas = []
+
+    def idiomas(self):
+        return {"en": "Inglês", "es": "Espanhol"}
+
+    def traduzir(self, linhas, origem, destino):
+        self.chamadas.append((list(linhas), origem, destino))
+        return [
+            None if texto in self.falhar else f"{destino.upper()} {texto}"
+            for texto in linhas
+        ]
+
+
+def test_traducao_reinsere_as_linhas_que_falharam(tmp_path):
     """Uma linha que a tradução não cobre volta no idioma original, sem sumir."""
-    import pytranscript
-
-    def traduzir_parcial(self, alvo):
-        traduzida = pytranscript.Transcript(time_end=self.time_end)
-        traduzida.append(self.time[0], "PT " + self.text[0])
-        traduzida.append(self.time[2], "PT " + self.text[2])
-        erro = pytranscript.LineError(self.time[1], self.text[1], RuntimeError("falhou"))
-        return traduzida, [erro]
-
-    monkeypatch.setattr(pytranscript.Transcript, "translate", traduzir_parcial)
     gerados = saida.escrever(
-        FALAS, tmp_path / "s", formatos=["srt"], traduzir_para="pt"
+        FALAS, tmp_path / "s", formatos=["srt"], traducoes=["en"],
+        motor_traducao=MotorFalso(falhar={"eu abro"}),
     )
-    conteudo = (tmp_path / "s.pt.srt").read_text(encoding="utf-8")
-    assert "PT GM: abram a porta" in conteudo
+    conteudo = (tmp_path / "s.en.srt").read_text(encoding="utf-8")
+    assert "GM: EN abram a porta" in conteudo
     assert "Ana: eu abro" in conteudo          # preservada no original
     assert "00:00:06,000 --> 00:00:09,500" in conteudo  # e ainda alinhada no tempo
-    assert gerados.avisos and "1 linha" in gerados.avisos[0]
+    assert gerados.avisos == [
+        "1 linha(s) não puderam ser traduzidas para Inglês e ficaram no idioma original."
+    ]
+
+
+def test_quando_tudo_falha_o_aviso_diz_a_causa_provavel(tmp_path):
+    motor = MotorFalso(falhar={f.texto for f in FALAS})
+    gerados = saida.escrever(FALAS, tmp_path / "s", formatos=["txt"], traducoes=["en"],
+                             motor_traducao=motor)
+    (aviso,) = gerados.avisos
+    assert "falhou por inteiro" in aviso and "conexão" in aviso
+    assert "Ana: eu abro" in (tmp_path / "s.en.txt").read_text(encoding="utf-8")
+
+
+def test_traduz_para_varios_idiomas_um_arquivo_por_idioma(tmp_path):
+    motor = MotorFalso()
+    gerados = saida.escrever(
+        FALAS, tmp_path / "s", formatos=["srt", "txt", "md"], idioma="pt",
+        traducoes=["en", "es"], motor_traducao=motor,
+    )
+    nomes = {c.name for c in gerados.arquivos}
+    assert {"s.en.srt", "s.en.txt", "s.es.srt", "s.es.txt"} <= nomes
+    assert "s.en.md" not in nomes  # o Markdown sai só no original
+    assert [(origem, destino) for _, origem, destino in motor.chamadas] == [
+        ("pt", "en"), ("pt", "es"),
+    ]
+    assert "ES espera ai" in (tmp_path / "s.es.txt").read_text(encoding="utf-8")
+
+
+def test_o_nome_de_quem_fala_nao_vai_para_o_tradutor(tmp_path):
+    motor = MotorFalso()
+    saida.escrever(FALAS, tmp_path / "s", formatos=["txt"], traducoes=["en"],
+                   motor_traducao=motor)
+    (linhas, _, _), = motor.chamadas
+    assert linhas == ["abram a porta", "eu abro", "espera ai"]
+    assert "Bruno: EN espera ai" in (tmp_path / "s.en.txt").read_text(encoding="utf-8")
+
+
+def test_sem_traducoes_o_motor_nem_e_consultado(tmp_path, monkeypatch):
+    from transcritor import traducao
+
+    def nao_devia(*_a):
+        raise AssertionError("consultou o motor sem tradução pedida")
+
+    monkeypatch.setattr(traducao, "motor", nao_devia)
+    saida.escrever(FALAS, tmp_path / "s", formatos=["txt"])
 
 
 def test_formato_desconhecido_e_recusado(tmp_path):

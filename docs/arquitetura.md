@@ -17,7 +17,7 @@ ele.
 Consequência prática: trocar o motor de reconhecimento, o algoritmo de separação de
 vozes ou o conjunto de formatos de saída afeta um módulo só.
 
-**Falas simultâneas nunca são descartadas.** As duas faixas correm em paralelo e
+**Falas simultâneas nunca são descartadas.** As faixas correm em paralelo e
 se sobrepõem o tempo todo. Nenhuma etapa elimina uma fala por coincidir no tempo
 com a de outra pessoa: `mesclagem.mesclar` só funde falas seguidas **do mesmo
 locutor e da mesma faixa**, e `saida` grava o tempo final real de cada uma — uma
@@ -44,7 +44,7 @@ flowchart TD
   MW --> VZ["vozes.py<br/><i>trecho → x-vector</i>"]
   MV --> VZ
   VZ --> DI["diarizacao.py<br/><i>x-vectors → locutor</i>"]
-  DI --> ME["mesclagem.py<br/><i>2 faixas → 1 linha do tempo</i>"]
+  DI --> ME["mesclagem.py<br/><i>N faixas → 1 linha do tempo</i>"]
   ME --> SA["saida.py<br/><i>Fala → arquivos</i>"]
 ```
 
@@ -53,6 +53,7 @@ flowchart TD
 | Módulo | Responsabilidade | Importa |
 |---|---|---|
 | `fala.py` | A estrutura `Fala`, trocada entre todos os módulos | nada |
+| `faixas.py` | Quais faixas transcrever e quem fala em cada uma: leitura da CLI e do JSON da web, validação, nomes padrão e avisos de nome repetido | nada |
 | `ffmpeg_tools.py` | Localiza o ffmpeg, lê as faixas do container, extrai WAV 16 kHz mono | `imageio_ffmpeg` |
 | `modelos.py` | Catálogo, download e cache dos modelos dos dois motores | `requests`, `tqdm`, `faster_whisper` |
 | `motor_whisper.py` | Reconhecimento com Whisper: texto pontuado e ciente do contexto | `fala`, `faster_whisper` |
@@ -61,14 +62,96 @@ flowchart TD
 | `vozes.py` | Extrai o x-vector de cada trecho, seja qual for o motor | `fala`, `vosk`, `numpy` |
 | `diarizacao.py` | Agrupa os x-vectors em locutores | `fala`, `numpy`, `scipy` |
 | `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
-| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
+| `traducao.py` | Motores de tradução: registro, idiomas oferecidos e tradução em lotes conferidos | `deep_translator` |
+| `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript`; traduz pelo motor ativo | `fala`, `mesclagem`, `traducao`, `pytranscript` |
+| `historico.py` | Termos de contexto já usados, num JSON em `dados/`, para a interface sugerir | nada do projeto |
+| `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
+| `progresso.py` | Custo de cada etapa por dispositivo e estimativa do tempo restante | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
-| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `ffmpeg_tools`, `modelos`, `saida` |
+| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `faixas`, `ffmpeg_tools`, `modelos`, `saida`, `copias` |
 
 A dependência anda sempre para cima nesta tabela: nenhum módulo importa outro que
 esteja abaixo dele. `fala.py` não importa nada — nem do projeto, nem de fora —, e é
 dele que vem a `Fala` usada por todos os seguintes. Foi separado de `transcricao.py`
 justamente para que os motores pudessem importá-la sem ciclo.
+
+### As N faixas
+
+`Configuracao.faixas` é uma lista de `faixas.Faixa`, uma por trilha escolhida,
+cada uma `UMA` (nome fixo) ou `VARIAS` (separação por voz). O `pipeline` percorre a
+lista: transcreve cada faixa, só extrai vetores de voz e chama a `diarizacao` nas
+de várias pessoas — e só baixa o modelo de locutor se houver alguma —, e entrega
+tudo à `mesclagem`, que já recebia uma lista de grupos e um deslocamento por faixa.
+
+Tudo o que interpreta o que o usuário escreveu mora em `faixas.py`, e a CLI e a
+API chamam as mesmas funções:
+
+| Função | Quem usa |
+|---|---|
+| `ler_especificacao` | `--faixa N=...` da CLI |
+| `ler_deslocamento` | `--deslocamento [N=]SEG` da CLI |
+| `ler_json` | campo `faixas` da API web |
+| `padrao` | o arranjo de duas faixas: Configuracao sem faixas, opções antigas da CLI, campos antigos da API |
+| `validar` | as duas interfaces, antes de começar, e o `pipeline`, contra as faixas do arquivo |
+| `nomes_repetidos` | as duas interfaces: devolve avisos, nunca erros |
+| `prefixo_de` | o `pipeline`, para nomear quem não tem nome |
+
+**Compatibilidade com o arranjo de duas faixas.** `faixas.padrao` reproduz as
+opções antigas exatamente, inclusive `n_jogadores=None` estimando mesmo com
+nomes. Com uma única faixa de várias pessoas, o prefixo continua `Jogador`, e os
+pesos do progresso foram escolhidos para dar as mesmas fatias de antes. O
+`test_pipeline_faixas.py` e o `test_cli.py` travam essa equivalência; numa
+gravação real, a saída da `main` e a deste arranjo são idênticas byte a byte.
+
+A API aceita os campos antigos (`faixa_gm`, `faixa_grupo`, `nome_gm`, `jogadores`,
+`nomes`, `deslocamento`) quando o campo `faixas` não vem. Não é só cortesia: os
+`trabalho.json` de envios que falharam guardaram esses campos, e a nova tentativa
+precisa reconstruir a configuração a partir deles.
+
+### Progresso e tempo restante
+
+O `pipeline` relata `(mensagem, fração)`. A fração não conta etapas: cada etapa de
+cada faixa pesa o que ela costuma custar **no dispositivo em uso** —
+`progresso.custo_transcricao` (Whisper na GPU ou na CPU, ou Vosk) e
+`progresso.CUSTO_VOZES` —, com fatias fixas para a preparação, a extração e o
+fim. O dispositivo vem de `transcricao.dispositivo_efetivo`, a mesma decisão que o
+motor toma ao abrir o modelo. Assim a porcentagem anda no ritmo do relógio, e a
+mensagem diz a etapa: "Transcrevendo a faixa 3 (Caio), 2 de 3".
+
+O tempo restante é calculado por quem mostra o progresso, com
+`progresso.EstimativaTempo`: o ritmo dos últimos 90 s, e `None` ("calculando...")
+antes de 10 s ou de 2% de avanço. Na web, o `Trabalho` guarda a estimativa e o
+estado devolvido à página já traz `restante`, `restante_texto` e `decorrido` — a
+página só exibe. A CLI usa a mesma classe e o mesmo `texto_restante`.
+
+As constantes de custo foram medidas numa RTX 4050 e num i7; só a proporção
+entre elas importa. Se a estimativa errar sistematicamente numa máquina, é ali
+que se ajusta.
+
+### A API da interface web
+
+| Rota | Para quê |
+|---|---|
+| `GET /api/modelos` | Modelos de fala, o padrão, os formatos e se há ffmpeg |
+| `GET /api/idiomas` | Idiomas do áudio (os do Whisper, mais `auto`) e de tradução (os do motor ativo), com nome em português |
+| `POST /api/faixas/verificar` | Confere as faixas antes do envio: erros, avisos e quais nomes se repetem em quais faixas |
+| `GET`/`DELETE /api/historico/contexto` | Sugestões de termos de contexto |
+| `POST /api/trabalhos` | Envia o vídeo e a configuração |
+| `GET /api/trabalhos/{id}` | Estado, progresso, tempo restante e resultado |
+| `POST /api/trabalhos/{id}/tentar-novamente` | Refaz um trabalho que falhou, com a cópia e a configuração guardadas |
+| `POST /api/trabalhos/{id}/configuracao` | Refaz um trabalho recusado ou que falhou com outra configuração, sem reenviar o vídeo |
+| `GET /api/trabalhos/{id}/arquivos/{nome}` | Baixa um arquivo gerado |
+
+O envio e o reenvio da configuração aceitam os mesmos campos, porque os dois
+dependem de `web._formulario`. Os dois, e a nova tentativa, terminam em
+`web._enfileirar`, que confere as faixas contra o arquivo:
+
+| Resposta | Quando | A cópia do vídeo |
+|---|---|---|
+| 200 | Enfileirado | Fica até o fim; some no sucesso |
+| 400 | Arquivo ilegível ou configuração inválida | No envio, é apagada (refazer não resolveria); no reenvio, fica |
+| 422 | Pede uma faixa que o arquivo não tem | Fica como `recusado`; a resposta traz `id`, `faixas_no_arquivo` e `total_faixas` |
+| 409 | O trabalho já está na fila, rodando ou concluído | — |
 
 ### Os dois motores de reconhecimento
 
@@ -160,7 +243,7 @@ aponta o cache dos modelos para um volume.
 | `/app` | Código, instalado em modo editável. Diretório de trabalho, o que faz `-o saida/...` cair em `/app/saida`. |
 | `/modelos` | Cache dos modelos de fala (Whisper e Vosk), em volume nomeado. |
 | `/midia` | Gravações de entrada, somente leitura. |
-| `/app/dados` | `RAIZ_TRABALHOS` do `web.py`, que é relativa ao diretório de trabalho. |
+| `/app/dados` | `RAIZ_TRABALHOS` do `web.py` (vem de `copias.RAIZ_PADRAO`, o mesmo padrão do `transcritor limpar`), relativa ao diretório de trabalho. |
 
 Ao mexer nesses caminhos, lembre que `web.py` resolve `dados/trabalhos` a partir do
 diretório de trabalho: mudar o `WORKDIR` muda onde os envios da interface caem.
@@ -182,8 +265,9 @@ foram estendidos em vez de substituídos:
   estimativa fixa de 5 segundos do original — e, diferente dele, não encurta uma
   legenda porque a seguinte começa antes: é o que preserva as interrupções.
   `to_vtt`, `write` e os demais formatos vêm de graça.
-- **`_traduzir`** (`saida.py`) reinsere as linhas que `Transcript.translate`
-  descartaria em silêncio, preservando o alinhamento dos tempos.
+
+A tradução, que antes também vinha do `pytranscript` (`Transcript.translate`, uma
+requisição por linha, descartando as que falhavam), passou para `traducao.py`.
 
 O laço de reconhecimento em `motor_vosk.py` é próprio, e não o
 `pytranscript.transcribe`, porque precisamos de dois dados que a função original
@@ -239,6 +323,28 @@ aceitos — nesse caso o motor é deduzido do conteúdo da pasta.
 Preencher os vetores de voz é opcional: quando o motor não os devolve, o `pipeline`
 chama `vozes.anexar_vetores` e a separação de locutores segue igual.
 
+### Adicionar ou trocar o motor de tradução
+
+Um motor é um objeto com `nome`, `descricao`, `online`, `idiomas()` —
+`{código: nome em português}` — e `traduzir(linhas, origem, destino)`, que
+devolve uma lista do mesmo tamanho, com None nas linhas que falharam.
+
+1. Escreva a classe em `traducao.py` (ou num módulo próprio, se for grande).
+2. Registre-a em `traducao.MOTORES`.
+3. Para torná-la a ativa, mude `traducao.PADRAO`.
+
+O resto acompanha sozinho: `transcritor idiomas`, a validação de `--traduzir` e
+do campo `traduzir` da API, e a lista de idiomas da interface web saem de
+`idiomas()` do motor ativo. `saida.escrever` só chama `traduzir`, e cuida de
+reinserir no original o que voltar como None.
+
+Um motor que conversa com um serviço por texto corrido pode reaproveitar
+`traducao.traduzir_em_lotes`: ela junta as linhas em lotes, **confere se cada
+lote volta com a mesma quantidade de linhas** e, se não voltar, refaz aquele lote
+linha por linha — sem isso, uma linha fundida pelo serviço deslocaria todas as
+traduções seguintes para a fala errada. Também desiste depois de
+`FALHAS_SEGUIDAS` lotes com erro, em vez de insistir sem rede.
+
 ### Trocar o algoritmo de separação de vozes
 
 `diarizacao.atribuir_locutores` recebe `list[Fala]` em ordem cronológica e devolve a
@@ -254,6 +360,11 @@ O `pipeline` não conhece nada do algoritmo além dessa chamada.
 um callback `(mensagem, fração)` para progresso. Uma nova interface só precisa
 montar a `Configuracao` e consumir o `Resultado`.
 
+As faixas ela monta com as funções de `faixas.py` — `ler_json`, se receber JSON —,
+e antes de começar chama `faixas.validar` e mostra `faixas.nomes_repetidos`, como a
+CLI e a API fazem. O `pipeline` não devolve esses avisos no `Resultado`: quem
+chama decide quando mostrá-los, de preferência antes de uma transcrição de horas.
+
 ---
 
 ## Testes
@@ -263,6 +374,12 @@ montar a `Configuracao` e consumir o `Resultado`.
 ```
 
 O `pytest` já faz parte do `requirements.txt`, com a versão fixa.
+
+A mesma suíte roda no GitHub Actions a cada push e a cada pull request, no Linux
+e no Windows, com Python 3.12 e as versões fixas do `requirements.txt`
+([`.github/workflows/testes.yml`](../.github/workflows/testes.yml)). Rodar nas
+duas plataformas é o que pega o que só quebra no Windows — codificação, fim de
+linha dos scripts, caminhos.
 
 Não precisam de modelos nem de rede: o relatório do ffmpeg é uma string fixa, os
 vetores de voz são sintéticos e os segmentos do Whisper vêm de objetos falsos. Isso
@@ -278,7 +395,18 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_mesclagem.py` | Intercalação, agrupamento, deslocamento e falas simultâneas |
 | `test_saida.py` | Formatos, tempos das legendas, falas simultâneas e tradução parcial |
 | `test_pipeline.py` | Validações e montagem do contexto antes de transcrever |
+| `test_pipeline_faixas.py` | O pipeline inteiro com N faixas, com reconhecimento falso e diarização real |
+| `test_faixas.py` | Sintaxe da CLI, JSON da web, validação, nomes padrão e avisos |
+| `test_cli.py` | Estilo novo, estilo antigo e a recusa de misturar os dois |
+| `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
+| `test_transcricao.py` | Validação do WAV e escolha do motor |
+| `test_traducao.py` | Lotes, conferência da quantidade de linhas, falhas, registro de motores e idiomas |
+| `test_web_api.py` | Recusa que guarda a cópia, reenvio da configuração, verificação das faixas e idiomas |
+| `test_historico.py` | Ordem por uso, limite, arquivo corrompido e a API do histórico |
+| `test_progresso.py` | Quando há base para estimar, o texto do tempo restante, a API e a linha da CLI |
 | `test_web.py` | Contrato entre a API e o formulário da página |
+| `test_copias.py` | O que a limpeza pode e nunca pode apagar |
+| `test_web_temporario.py` | Cópia do envio: apagada no sucesso, guardada na falha, nova tentativa, limpeza; e a CLI que nunca apaga |
 | `test_instalacao.py` | O que a instalação no Windows exige do empacotamento |
 
 ### O teste do container
@@ -291,7 +419,15 @@ se isola numa pasta, num volume e numa porta próprios, então não atrapalha um
 container já rodando. O uso está em
 [`docs/docker.md`, seção 11](docker.md#11-teste-automatizado).
 
-O `test_web.py` merece destaque: ele lê o HTML da interface e confere que todo campo
-enviado pelo formulário existe como parâmetro do endpoint, e que toda propriedade
-lida pelo JavaScript existe no payload da API. É o teste que pega quebras de
+O `conftest.py` redireciona `web.RAIZ_TRABALHOS` e `web.ARQUIVO_HISTORICO` para
+uma pasta temporária em **todos** os testes: nenhum deles escreve na pasta `dados/`
+real do projeto, nem por descuido.
+
+O `test_web.py` merece destaque: ele lê o HTML da interface e confere os contratos
+com a API sem precisar de navegador — toda chamada da página aponta para uma rota
+que existe, todo campo enviado é aceito por `web._formulario`, cada faixa é montada
+com as chaves que `faixas.ler_json` lê, e toda propriedade lida pelo JavaScript
+existe no payload da API. Também trava duas regras da página: nada vindo do
+servidor é inserido como HTML (`innerHTML` não aparece no script), e todo campo
+tem o botão de ajuda. É o teste que pega quebras de
 contrato entre as duas metades da aplicação web, que nenhum dos outros veria.

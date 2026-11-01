@@ -1,4 +1,4 @@
-"""Orquestração: MP4 do OBS -> duas faixas -> transcrição -> locutores -> mesclagem."""
+"""Orquestração: arquivo do OBS -> N faixas -> transcrição -> locutores -> mesclagem."""
 
 from __future__ import annotations
 
@@ -7,13 +7,28 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import diarizacao, ffmpeg_tools, mesclagem, modelos, saida, transcricao, vozes
+from . import (
+    diarizacao,
+    faixas,
+    ffmpeg_tools,
+    mesclagem,
+    modelos,
+    progresso,
+    saida,
+    transcricao,
+    vozes,
+)
 from .fala import Fala
+from .faixas import Faixa
 
-# Peso de cada etapa no progresso total: as duas transcrições dominam o tempo, e
-# a extração dos vetores de voz roda só na faixa dos jogadores. Os 5% restantes
-# ficam para a diarização, a mesclagem e a escrita dos arquivos.
-_ETAPAS = {"extracao": 0.04, "faixa_gm": 0.24, "faixa_grupo": 0.48, "vozes": 0.19}
+# Peso de cada etapa no progresso total. A preparação (conferir as faixas e os
+# modelos), a extração e o fim (diarização, mesclagem e escrita) têm fatia fixa;
+# o resto se divide entre as etapas de cada faixa pelo custo delas no dispositivo
+# em uso (`progresso`), para que a porcentagem ande no ritmo do relógio — é o
+# que torna confiável a estimativa do tempo restante.
+_PREPARO = 0.02
+_EXTRACAO = 0.02
+_FINAL = 0.05
 
 Relato = Callable[[str, float], None]
 
@@ -25,18 +40,13 @@ class Configuracao:
     video: Path
     destino: Path
     modelo_fala: str = modelos.PADRAO
-    faixa_gm: int = 0
-    faixa_grupo: int = 1
-    nome_gm: str = "GM"
-    n_jogadores: int | None = 5
-    nomes_jogadores: Sequence[str] = ()
-    prefixo_jogador: str = "Jogador"
+    faixas: Sequence[Faixa] = field(default_factory=faixas.padrao)
     formatos: Sequence[str] = saida.FORMATOS
     idioma: str = "pt"
-    traduzir_para: str | None = None
+    traducoes: Sequence[str] = ()
     contexto: str = ""
+    termos: Sequence[str] = ()
     dispositivo: str = "auto"
-    deslocamento_grupo: float = 0.0
     inicio: float = 0.0
     fim: float | None = None
     juntar_falas: bool = True
@@ -57,135 +67,191 @@ def inspecionar(video: Path) -> list[ffmpeg_tools.FaixaAudio]:
     return ffmpeg_tools.listar_faixas_audio(Path(video))
 
 
+# Rótulos das listas do prompt, no idioma do áudio. O Whisper tende a continuar
+# no idioma e no estilo do prompt; um rótulo em português num áudio em inglês o
+# puxaria para o lado errado. A detecção automática de idioma não é afetada (ela
+# olha só o áudio), mas com "auto" não sabemos o idioma: aí as listas vão sem
+# rótulo, só os nomes, que não pertencem a idioma nenhum.
+ROTULOS_CONTEXTO = {
+    "pt": ("Participantes", "Termos da sessão"),
+    "en": ("Participants", "Session terms"),
+    "es": ("Participantes", "Términos de la sesión"),
+    "fr": ("Participants", "Termes de la session"),
+    "de": ("Teilnehmer", "Begriffe der Sitzung"),
+    "it": ("Partecipanti", "Termini della sessione"),
+}
+
+
 def contexto_da_mesa(config: Configuracao) -> str:
     """Monta a dica de contexto que o Whisper recebe antes de transcrever.
 
     Os nomes da mesa entram junto com o texto livre porque é neles que um
     reconhecedor mais erra: sem a dica, um nome próprio vira a palavra comum
     mais parecida. A dica é um prompt, não uma regra — ela enviesa, não obriga.
+
+    Ordem: os participantes, os termos (a lista da interface web, como uma
+    frase) e o texto livre (`--contexto`), que vai como foi escrito.
     """
-    partes = []
-    nomes = [config.nome_gm, *config.nomes_jogadores]
-    presentes = ", ".join(n for n in nomes if n.strip())
-    if presentes:
-        partes.append(f"Participantes: {presentes}.")
-    if config.contexto.strip():
-        partes.append(config.contexto.strip())
-    return " ".join(partes)
+    rotulos = ROTULOS_CONTEXTO.get((config.idioma or "").lower())
+
+    def frase(indice: int, itens: Sequence[str]) -> str:
+        lista = ", ".join(dict.fromkeys(i.strip() for i in itens if i.strip()))
+        if not lista:
+            return ""
+        return f"{rotulos[indice]}: {lista}." if rotulos else f"{lista}."
+
+    partes = [
+        frase(0, faixas.nomes_informados(config.faixas)),
+        frase(1, config.termos),
+        config.contexto.strip(),
+    ]
+    return " ".join(p for p in partes if p)
+
+
+def _pesos(
+    lista: Sequence[Faixa], custo_texto: float
+) -> dict[int, tuple[float, float]]:
+    """Fração do progresso de cada faixa: (transcrição, vetores de voz).
+
+    Todas as faixas têm a mesma duração (são do mesmo arquivo e do mesmo
+    recorte), então o custo por segundo de áudio basta para dividir o tempo.
+    """
+    unidades = {
+        f.numero: (
+            custo_texto,
+            progresso.CUSTO_VOZES if f.tipo == faixas.VARIAS else 0.0,
+        )
+        for f in lista
+    }
+    total = sum(a + b for a, b in unidades.values()) or 1.0
+    disponivel = 1.0 - _PREPARO - _EXTRACAO - _FINAL
+    return {n: (a / total * disponivel, b / total * disponivel) for n, (a, b) in unidades.items()}
+
+
+def _descricao(faixa: Faixa, posicao: int, total: int) -> str:
+    """"faixa 3 (Caio), 2 de 3": o número no arquivo e a posição na fila."""
+    quem = faixa.nome_unico if faixa.tipo == faixas.UMA else "várias pessoas"
+    return f"{faixa.rotulo} ({quem}), {posicao} de {total}"
 
 
 def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
-    """Roda a transcrição completa e escreve os arquivos de saída."""
+    """Roda a transcrição completa e escreve os arquivos de saída.
+
+    Os avisos de nome repetido entre faixas (`faixas.nomes_repetidos`) não
+    entram no resultado: quem chama os mostra antes de começar.
+    """
     video = Path(config.video)
     if not video.is_file():
         raise FileNotFoundError(f"{video} não encontrado")
+    escolhidas = list(config.faixas)
+    faixas.validar(escolhidas)
 
     def aviso(mensagem: str, fracao: float) -> None:
         if relatar is not None:
             relatar(mensagem, min(1.0, max(0.0, fracao)))
 
     aviso("Verificando as faixas de áudio", 0.0)
-    faixas = ffmpeg_tools.listar_faixas_audio(video)
-    _validar_faixas(faixas, config)
+    _validar_faixas(ffmpeg_tools.listar_faixas_audio(video), config)
 
     aviso("Preparando os modelos", 0.01)
     modelo = modelos.resolver_modelo_fala(config.modelo_fala, config.diretorio_modelos)
-    caminho_locutor = modelos.resolver_modelo_locutor(config.diretorio_modelos)
-    # A extração de vetores de voz roda no Vosk mesmo quando o texto vem do
-    # Whisper; o modelo compacto basta para alimentar o reconhecedor.
-    modelo_vosk = (
-        modelo
-        if modelo.motor == modelos.MOTOR_VOSK
-        else modelos.resolver_modelo_fala("vosk-pt", config.diretorio_modelos)
-    )
+    separar_vozes = any(f.tipo == faixas.VARIAS for f in escolhidas)
+    caminho_locutor = modelo_vosk = None
+    if separar_vozes:
+        # Só baixa o modelo de locutor se alguma faixa for de várias pessoas. A
+        # extração de vetores roda no Vosk mesmo quando o texto vem do Whisper;
+        # o modelo compacto basta para alimentar o reconhecedor.
+        caminho_locutor = modelos.resolver_modelo_locutor(config.diretorio_modelos)
+        modelo_vosk = (
+            modelo
+            if modelo.motor == modelos.MOTOR_VOSK
+            else modelos.resolver_modelo_fala("vosk-pt", config.diretorio_modelos)
+        )
     contexto = contexto_da_mesa(config)
 
+    dispositivo = transcricao.dispositivo_efetivo(modelo, config.dispositivo)
     avisos: list[str] = []
     aviso_gpu = transcricao.aviso_de_dispositivo(modelo, config.dispositivo)
     if aviso_gpu:
         avisos.append(aviso_gpu)
         aviso(aviso_gpu, 0.02)
 
-    concluido = 0.0
+    pesos = _pesos(escolhidas, progresso.custo_transcricao(modelo.motor, dispositivo))
+    falas_por_faixa: list[tuple[Faixa, list[Fala]]] = []
+    concluido = _PREPARO
     with tempfile.TemporaryDirectory(prefix="transcritor-") as tmp:
         temporario = Path(tmp)
 
         aviso("Extraindo as faixas de áudio do vídeo", concluido)
-        wav_gm = ffmpeg_tools.extrair_faixa(
-            video, config.faixa_gm, temporario / "faixa-gm.wav",
-            inicio=config.inicio, fim=config.fim,
-        )
-        wav_grupo = ffmpeg_tools.extrair_faixa(
-            video, config.faixa_grupo, temporario / "faixa-grupo.wav",
-            inicio=config.inicio, fim=config.fim,
-        )
-        concluido += _ETAPAS["extracao"]
+        wavs = {
+            f.numero: ffmpeg_tools.extrair_faixa(
+                video, f.numero, temporario / f"faixa-{f.numero + 1}.wav",
+                inicio=config.inicio, fim=config.fim,
+            )
+            for f in escolhidas
+        }
+        concluido += _EXTRACAO
 
-        # Faixa do GM: locutor único, logo não há por que calcular vetores de voz.
-        base = concluido
-        aviso(f"Transcrevendo a faixa do {config.nome_gm}", base)
-        falas_gm = transcricao.transcrever(
-            wav_gm, modelo,
-            faixa=config.faixa_gm,
-            idioma=config.idioma,
-            contexto=contexto,
-            dispositivo=config.dispositivo,
-            progresso=lambda f: aviso(
-                f"Transcrevendo a faixa do {config.nome_gm}",
-                base + f * _ETAPAS["faixa_gm"],
-            ),
-        )
-        for fala in falas_gm:
-            fala.locutor = config.nome_gm
-        concluido = base + _ETAPAS["faixa_gm"]
+        for posicao, faixa in enumerate(escolhidas, start=1):
+            peso_texto, peso_vozes = pesos[faixa.numero]
+            varias = faixa.tipo == faixas.VARIAS
+            descricao = _descricao(faixa, posicao, len(escolhidas))
 
-        # Faixa do grupo: várias vozes. O motor Vosk já devolve os vetores na
-        # mesma passada; com o Whisper eles vêm depois, trecho a trecho.
-        base = concluido
-        aviso("Transcrevendo a faixa dos jogadores", base)
-        falas_grupo = transcricao.transcrever(
-            wav_grupo, modelo,
-            faixa=config.faixa_grupo,
-            idioma=config.idioma,
-            contexto=contexto,
-            dispositivo=config.dispositivo,
-            modelo_locutor=caminho_locutor,
-            progresso=lambda f: aviso(
-                "Transcrevendo a faixa dos jogadores",
-                base + f * _ETAPAS["faixa_grupo"],
-            ),
-        )
-        concluido = base + _ETAPAS["faixa_grupo"]
-
-        if not any(f.vetor_voz for f in falas_grupo):
             base = concluido
-            aviso("Analisando as vozes dos jogadores", base)
-            vozes.anexar_vetores(
-                wav_grupo, falas_grupo, modelo_vosk.caminho, caminho_locutor,
-                progresso=lambda f: aviso(
-                    "Analisando as vozes dos jogadores",
-                    base + f * _ETAPAS["vozes"],
+            mensagem = f"Transcrevendo a {descricao}"
+            aviso(mensagem, base)
+            # O motor Vosk já devolve os vetores de voz na mesma passada; com o
+            # Whisper eles vêm depois, trecho a trecho.
+            falas = transcricao.transcrever(
+                wavs[faixa.numero], modelo,
+                faixa=faixa.numero,
+                idioma=config.idioma,
+                contexto=contexto,
+                dispositivo=config.dispositivo,
+                modelo_locutor=caminho_locutor if varias else None,
+                progresso=lambda f, base=base, mensagem=mensagem, peso=peso_texto: aviso(
+                    mensagem, base + f * peso
                 ),
             )
-        concluido += _ETAPAS["vozes"]
+            concluido = base + peso_texto
 
-    aviso("Separando os locutores pela voz", concluido)
-    diarizacao.atribuir_locutores(
-        falas_grupo,
-        n_locutores=config.n_jogadores,
-        nomes=list(config.nomes_jogadores) or None,
-        prefixo=config.prefixo_jogador,
-    )
+            if varias:
+                if not any(f.vetor_voz for f in falas):
+                    base = concluido
+                    mensagem = f"Analisando as vozes da {descricao}"
+                    aviso(mensagem, base)
+                    vozes.anexar_vetores(
+                        wavs[faixa.numero], falas, modelo_vosk.caminho, caminho_locutor,
+                        progresso=lambda f, base=base, mensagem=mensagem, peso=peso_vozes: (
+                            aviso(mensagem, base + f * peso)
+                        ),
+                    )
+                concluido += peso_vozes
+            else:
+                # Uma pessoa só: o nome é fixo, sem vetores de voz nem agrupamento.
+                for fala in falas:
+                    fala.locutor = faixa.nome_unico
+            falas_por_faixa.append((faixa, falas))
 
-    aviso("Mesclando as duas faixas", concluido + 0.02)
+    for posicao, (faixa, falas) in enumerate(falas_por_faixa, start=1):
+        if faixa.tipo == faixas.VARIAS:
+            descricao = _descricao(faixa, posicao, len(falas_por_faixa))
+            aviso(f"Separando os locutores da {descricao}", concluido)
+            diarizacao.atribuir_locutores(
+                falas,
+                n_locutores=faixa.n_locutores,
+                nomes=list(faixa.nomes) or None,
+                prefixo=faixas.prefixo_de(faixa, escolhidas),
+            )
+
+    aviso("Mesclando as faixas", concluido + 0.02)
     # Com recorte, os tempos saem relativos ao trecho; somamos o início de volta
     # para que os carimbos batam com o vídeo original.
-    deslocamentos = {
-        config.faixa_gm: config.inicio,
-        config.faixa_grupo: config.inicio + config.deslocamento_grupo,
-    }
+    deslocamentos = {f.numero: config.inicio + f.deslocamento for f in escolhidas}
     falas = mesclagem.mesclar(
-        falas_gm, falas_grupo, deslocamentos=deslocamentos, juntar=config.juntar_falas
+        *(falas for _, falas in falas_por_faixa),
+        deslocamentos=deslocamentos,
+        juntar=config.juntar_falas,
     )
 
     aviso("Gravando os arquivos", concluido + 0.03)
@@ -194,7 +260,7 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
         config.destino,
         formatos=config.formatos,
         idioma=config.idioma,
-        traduzir_para=config.traduzir_para,
+        traducoes=config.traducoes,
     )
 
     aviso("Concluído", 1.0)
@@ -207,18 +273,6 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
     )
 
 
-def _validar_faixas(faixas: Sequence[ffmpeg_tools.FaixaAudio], config: Configuracao) -> None:
-    if len(faixas) < 2:
-        raise ValueError(
-            f"O vídeo tem {len(faixas)} faixa(s) de áudio; são necessárias 2. "
-            "No OBS, grave com as trilhas 1 e 2 habilitadas em "
-            "Configurações > Saída > Gravação."
-        )
-    for numero, rotulo in ((config.faixa_gm, "GM"), (config.faixa_grupo, "jogadores")):
-        if not 0 <= numero < len(faixas):
-            raise ValueError(
-                f"A faixa {numero + 1} ({rotulo}) não existe: o vídeo tem "
-                f"{len(faixas)} faixas de áudio."
-            )
-    if config.faixa_gm == config.faixa_grupo:
-        raise ValueError("As faixas do GM e dos jogadores precisam ser diferentes.")
+def _validar_faixas(no_arquivo: Sequence[ffmpeg_tools.FaixaAudio], config: Configuracao) -> None:
+    """Confere a configuração contra as faixas que o arquivo realmente tem."""
+    faixas.validar(list(config.faixas), len(no_arquivo))

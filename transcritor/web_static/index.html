@@ -6,256 +6,981 @@
 <title>Transcritor de Sessões</title>
 <style>
   :root {
-    --fundo: #f6f6f4; --painel: #fff; --borda: #e2e1dd; --texto: #1c1b19;
-    --suave: #6b6862; --destaque: #b8562f; --destaque-fraco: #f4e5dd;
-    --gm: #b8562f; --ok: #2f7d4f;
+    --fundo: #f6f5f2; --painel: #ffffff; --borda: #e2e0da; --borda-forte: #cfccc3;
+    --texto: #1c1b19; --suave: #6b6862; --destaque: #b8562f; --destaque-texto: #ffffff;
+    --destaque-fraco: #f6e7de; --ok: #2f7d4f; --ok-fraco: #e3f2e8; --erro: #b3372a;
+    --erro-fraco: #fbe6e3; --alerta: #8a6100; --alerta-fraco: #fbf0d4;
+    --sombra: 0 1px 2px rgb(0 0 0 / .05), 0 2px 8px rgb(0 0 0 / .04);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --fundo: #16150f; --painel: #201f19; --borda: #34322a; --texto: #eceae2;
-      --suave: #9b978c; --destaque: #e08a5e; --destaque-fraco: #33251d;
-      --gm: #e08a5e; --ok: #6cc08a;
+      --fundo: #141310; --painel: #1e1d19; --borda: #34322a; --borda-forte: #4a473c;
+      --texto: #eceae2; --suave: #9e9a8f; --destaque: #e08a5e; --destaque-texto: #1a1208;
+      --destaque-fraco: #3a2a20; --ok: #6cc08a; --ok-fraco: #1d3326; --erro: #f08a7c;
+      --erro-fraco: #3d2220; --alerta: #e8c15c; --alerta-fraco: #3a3018;
+      --sombra: none;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fundo); color: var(--texto);
     font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .envolucro { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -.01em; }
-  .legenda { color: var(--suave); margin: 0 0 28px; }
-  .cartao { background: var(--painel); border: 1px solid var(--borda);
-    border-radius: 12px; padding: 20px; margin-bottom: 18px; }
-  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-  label { display: block; font-size: .8rem; font-weight: 600; color: var(--suave);
-    text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
-  input, select, textarea { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
-    border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); }
-  input[type=file] { padding: 8px; cursor: pointer; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--destaque); outline-offset: -1px; }
-  .dica { font-size: .78rem; color: var(--suave); margin-top: 4px; font-weight: 400;
-    text-transform: none; letter-spacing: 0; }
-  button { background: var(--destaque); color: #fff; border: 0; border-radius: 8px;
-    padding: 11px 22px; font: 600 15px/1 inherit; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .barra { height: 8px; border-radius: 4px; background: var(--borda); overflow: hidden; }
+  .envolucro { max-width: 900px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 1.55rem; margin: 0 0 4px; letter-spacing: -.01em; }
+  h2 { font-size: 1.02rem; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .legenda { color: var(--suave); margin: 0 0 24px; }
+  .passo { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--destaque-fraco); color: var(--destaque); font-size: .8rem; font-weight: 700; }
+  .cartao { background: var(--painel); border: 1px solid var(--borda); border-radius: 14px;
+    padding: 18px 20px 20px; margin-bottom: 16px; box-shadow: var(--sombra); }
+  .cartao > header { display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .cartao > header p { margin: 4px 0 0 34px; color: var(--suave); font-size: .86rem; width: 100%; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .campo { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .rotulo { display: flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 650;
+    color: var(--suave); text-transform: uppercase; letter-spacing: .04em; }
+  input, select { width: 100%; padding: 9px 11px; border-radius: 9px; font: inherit;
+    border: 1px solid var(--borda-forte); background: var(--fundo); color: var(--texto); }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible,
+  .opcao:focus-visible { outline: 2px solid var(--destaque); outline-offset: 1px; }
+  input:disabled { opacity: .5; cursor: not-allowed; }
+  input.repetido { border-color: var(--alerta); background: var(--alerta-fraco); }
+  button { font: inherit; cursor: pointer; border-radius: 9px; }
+  .botao { background: var(--destaque); color: var(--destaque-texto); border: 0;
+    padding: 11px 22px; font-weight: 650; }
+  .botao:disabled { opacity: .5; cursor: not-allowed; }
+  .botao-sec { background: transparent; color: var(--texto); border: 1px solid var(--borda-forte);
+    padding: 8px 14px; font-size: .9rem; }
+  .botao-sec:hover { border-color: var(--destaque); color: var(--destaque); }
+  .botao-icone { background: transparent; border: 0; color: var(--suave); padding: 4px 8px;
+    font-size: 1.1rem; line-height: 1; }
+  .botao-icone:hover { color: var(--erro); }
+
+  /* Ajuda: o "i" mostra o balão ao passar o mouse, ao focar pelo teclado e ao tocar. */
+  .ajuda { position: relative; display: inline-flex; text-transform: none; letter-spacing: 0; }
+  .info { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--borda-forte);
+    background: var(--painel); color: var(--suave); font: italic 700 11px/1 Georgia, serif;
+    padding: 0; display: grid; place-items: center; }
+  .info:hover, .info:focus-visible { color: var(--destaque); border-color: var(--destaque); }
+  .balao { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: -10px;
+    width: min(300px, 78vw); padding: 10px 12px; border-radius: 10px; font-size: .84rem;
+    font-weight: 400; line-height: 1.45; color: var(--texto); background: var(--painel);
+    border: 1px solid var(--borda-forte); box-shadow: 0 6px 24px rgb(0 0 0 / .14); }
+  .ajuda:hover .balao, .ajuda:focus-within .balao { display: block; }
+
+  /* Arquivo */
+  .arquivo { border: 2px dashed var(--borda-forte); border-radius: 12px; padding: 18px;
+    text-align: center; background: var(--fundo); transition: border-color .15s, background .15s; }
+  .arquivo.arrastando { border-color: var(--destaque); background: var(--destaque-fraco); }
+  .arquivo .campo { align-items: center; }
+  .arquivo input { border: 0; background: transparent; padding: 4px; cursor: pointer;
+    color: var(--texto); width: auto; max-width: 100%; }
+  .arquivo input::file-selector-button { font: inherit; font-weight: 650; cursor: pointer;
+    margin-right: 12px; padding: 9px 16px; border-radius: 9px; border: 1px solid var(--destaque);
+    background: var(--destaque-fraco); color: var(--destaque); }
+  .arquivo input::file-selector-button:hover { background: var(--destaque); color: var(--destaque-texto); }
+  .arquivo input:disabled::file-selector-button { cursor: not-allowed; }
+  .arquivo .chamada { margin: 0 0 8px; font-weight: 600; }
+  .arquivo .dica { margin-top: 6px; }
+  .dica { font-size: .82rem; color: var(--suave); }
+
+  /* Faixas */
+  .faixas { display: grid; gap: 12px; }
+  .faixa { border: 1px solid var(--borda); border-radius: 12px; padding: 14px; margin: 0;
+    background: var(--fundo); display: grid; gap: 12px; }
+  .faixa.fora { border-color: var(--erro); background: var(--erro-fraco); }
+  .faixa-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .faixa-topo .titulo { font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .faixa-topo select { width: auto; padding: 6px 8px; }
+  .faixa-topo .botao-icone { margin-left: auto; }
+  .segmentos { display: inline-flex; border: 1px solid var(--borda-forte); border-radius: 9px;
+    overflow: hidden; }
+  .segmentos label { padding: 7px 12px; cursor: pointer; font-size: .9rem; user-select: none; }
+  .segmentos input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .segmentos input:checked + span { color: var(--destaque); font-weight: 650; }
+  .segmentos label:has(input:checked) { background: var(--destaque-fraco); }
+  .segmentos label:has(input:focus-visible) { outline: 2px solid var(--destaque); outline-offset: -2px; }
+  details > summary { cursor: pointer; color: var(--suave); font-size: .86rem; }
+  details[open] > summary { margin-bottom: 8px; }
+
+  /* Listas de itens (nomes, termos, idiomas escolhidos) */
+  .itens { display: flex; flex-wrap: wrap; gap: 6px; }
+  .item { display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px 3px 11px;
+    border-radius: 999px; background: var(--destaque-fraco); font-size: .88rem; }
+  .item.repetido { background: var(--alerta-fraco); outline: 1px solid var(--alerta); }
+  .item .botao-icone { padding: 0 6px; font-size: 1rem; }
+  .entrada-item { display: flex; gap: 6px; }
+  .entrada-item input { flex: 1; }
+  .sugestoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .sugestao { display: inline-flex; align-items: center; border: 1px dashed var(--borda-forte);
+    border-radius: 999px; font-size: .84rem; }
+  .sugestao > button:first-child { background: transparent; border: 0; color: var(--texto);
+    padding: 3px 4px 3px 11px; }
+  .sugestao > button:first-child:hover { color: var(--destaque); }
+  .sugestao .botao-icone { padding: 0 8px 0 2px; font-size: .95rem; }
+
+  /* Seleção múltipla de idiomas */
+  .multi { position: relative; }
+  .multi .lista { position: absolute; z-index: 15; left: 0; right: 0; top: calc(100% + 4px);
+    max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+    background: var(--painel); border: 1px solid var(--borda-forte); border-radius: 10px;
+    box-shadow: 0 8px 28px rgb(0 0 0 / .14); }
+  .opcao { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px;
+    border-radius: 7px; cursor: pointer; }
+  .opcao:hover, .opcao.ativa { background: var(--destaque-fraco); }
+  .opcao[aria-selected="true"]::after { content: "✓"; color: var(--destaque); font-weight: 700; }
+  .opcao small { color: var(--suave); }
+
+  /* Interruptor */
+  .interruptor { display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+    font-size: .92rem; }
+  .interruptor input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .interruptor .trilho { width: 38px; height: 22px; border-radius: 999px;
+    background: var(--borda-forte); position: relative; transition: background .2s; }
+  .interruptor .trilho::after { content: ""; position: absolute; top: 3px; left: 3px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .interruptor input:checked + .trilho { background: var(--destaque); }
+  .interruptor input:checked + .trilho::after { transform: translateX(16px); }
+  .interruptor input:focus-visible + .trilho { outline: 2px solid var(--destaque); outline-offset: 2px; }
+
+  /* Mensagens */
+  .nota { border-radius: 10px; padding: 10px 12px; font-size: .88rem; margin: 0; }
+  .nota.alerta { background: var(--alerta-fraco); color: var(--texto); border: 1px solid var(--alerta); }
+  .nota.erro { background: var(--erro-fraco); border: 1px solid var(--erro); }
+  .nota.info-azul { background: var(--destaque-fraco); border: 1px solid var(--destaque); }
+  .nota ul { margin: 6px 0 0; padding-left: 18px; }
+  .acoes { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  /* Progresso */
+  .linha-estado { display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .etapa { font-weight: 600; }
+  .numeros { display: flex; gap: 14px; color: var(--suave); font-size: .88rem;
+    font-variant-numeric: tabular-nums; }
+  .numeros b { color: var(--texto); font-size: 1.05rem; }
+  .barra { height: 10px; border-radius: 5px; background: var(--borda); overflow: hidden; }
   .barra > i { display: block; height: 100%; width: 0; background: var(--destaque);
-    transition: width .35s ease; }
-  .linha-estado { display: flex; justify-content: space-between; gap: 12px;
-    margin-bottom: 10px; font-size: .9rem; }
+    transition: width .4s ease; }
+
+  /* Resultado */
+  .resumo { display: flex; flex-wrap: wrap; gap: 18px; font-size: .9rem; color: var(--suave); }
+  .resumo b { color: var(--texto); }
   .arquivos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .arquivos a { border: 1px solid var(--borda); border-radius: 999px; padding: 5px 13px;
+  .arquivos a { border: 1px solid var(--borda-forte); border-radius: 999px; padding: 5px 13px;
     font-size: .85rem; text-decoration: none; color: var(--texto); background: var(--fundo); }
   .arquivos a:hover { border-color: var(--destaque); color: var(--destaque); }
   .previa { max-height: 380px; overflow-y: auto; margin-top: 14px; border-top: 1px solid var(--borda); }
-  .fala { display: grid; grid-template-columns: 62px 110px 1fr; gap: 10px;
+  .fala { display: grid; grid-template-columns: 62px 130px 1fr; gap: 10px;
     padding: 7px 2px; border-bottom: 1px solid var(--borda); font-size: .88rem; }
   .fala time { color: var(--suave); font-variant-numeric: tabular-nums; }
   .fala b { font-weight: 600; overflow-wrap: anywhere; }
-  .fala.faixa1 b { color: var(--gm); }
-  .erro { border-color: #c04a3a; background: var(--destaque-fraco); }
-  .oculto { display: none; }
-  .aviso { font-size: .85rem; color: var(--suave); margin-top: 10px; }
-  .resumo { display: flex; flex-wrap: wrap; gap: 18px; font-size: .88rem; color: var(--suave); }
-  .resumo b { color: var(--texto); }
-  @media (max-width: 560px) { .fala { grid-template-columns: 54px 1fr; }
-    .fala b { grid-column: 2; } .fala span { grid-column: 2; } }
+
+  dialog { border: 1px solid var(--borda-forte); border-radius: 14px; padding: 20px;
+    max-width: min(480px, calc(100vw - 32px)); background: var(--painel); color: var(--texto); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { margin-bottom: 10px; }
+  .oculto { display: none !important; }
+  @media (max-width: 560px) {
+    .cartao { padding: 16px 14px; }
+    .cartao > header p { margin-left: 0; }
+    .fala { grid-template-columns: 54px 1fr; }
+    .fala b, .fala span { grid-column: 2; }
+  }
 </style>
 </head>
 <body>
 <div class="envolucro">
   <h1>Transcritor de Sessões</h1>
-  <p class="legenda">Envie a gravação do OBS em MP4 com duas faixas de áudio.
-    A faixa 1 vira o GM; a faixa 2 é separada por voz entre os jogadores.</p>
+  <p class="legenda">Envie a gravação do OBS, diga quem fala em cada faixa de áudio e
+    receba uma transcrição única, com cada fala atribuída a quem a disse.</p>
 
-  <div id="alerta-ffmpeg" class="cartao erro oculto"></div>
+  <p id="alerta-ffmpeg" class="nota erro oculto" role="alert"></p>
 
-  <form id="formulario" class="cartao">
-    <label for="video">Vídeo (MP4 com 2 faixas)</label>
-    <input type="file" id="video" name="video" accept="video/*,audio/*" required>
+  <form id="formulario" novalidate>
+    <!-- 1. Gravação -->
+    <section class="cartao">
+      <header><h2><span class="passo">1</span> Gravação</h2></header>
+      <div class="arquivo" id="area-arquivo">
+        <p class="chamada">Arraste o arquivo para cá, ou escolha no computador</p>
+        <div class="campo">
+          <span class="rotulo"><label for="video">Arquivo de vídeo ou áudio</label>
+            <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: arquivo" aria-describedby="dica-video">i</button>
+              <span role="tooltip" id="dica-video" class="balao">A gravação do OBS, de preferência em MKV ou MP4, com cada fonte de som numa trilha (o microfone do GM numa, o Discord noutra). O arquivo é copiado para o servidor; a cópia é apagada quando a transcrição termina.</span></span></span>
+          <input type="file" id="video" name="video" accept="video/*,audio/*,.mkv">
+        </div>
+        <p class="dica" id="aviso-tempo">Para gravações longas, a linha de comando evita copiar o arquivo inteiro.</p>
+      </div>
+      <p id="aviso-copia" class="nota info-azul oculto" role="status" style="margin-top:12px"></p>
+    </section>
 
-    <div class="grade" style="margin-top:18px">
-      <div>
-        <label for="modelo">Modelo de reconhecimento</label>
-        <select id="modelo" name="modelo"></select>
+    <!-- 2. Faixas -->
+    <section class="cartao">
+      <header>
+        <h2><span class="passo">2</span> Quem fala em cada faixa
+          <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: faixas" aria-describedby="dica-faixas">i</button>
+            <span role="tooltip" id="dica-faixas" class="balao">Uma faixa é uma trilha de áudio do arquivo. Marque "uma pessoa" para um microfone individual: as falas recebem o nome dela, sem análise de voz. Marque "várias pessoas" para uma trilha compartilhada, como o Discord: as vozes são separadas pelo timbre. Só as faixas listadas aqui são transcritas.</span></span>
+        </h2>
+        <button type="button" class="botao-sec" id="adicionar-faixa">+ Adicionar faixa</button>
+        <p>Começa com o arranjo de sempre: o GM na faixa 1 e os jogadores na faixa 2.</p>
+      </header>
+      <div id="faixas" class="faixas"></div>
+      <div id="situacao-faixas" aria-live="polite" style="margin-top:12px"></div>
+    </section>
+
+    <!-- 3. Reconhecimento -->
+    <section class="cartao">
+      <header><h2><span class="passo">3</span> Reconhecimento</h2></header>
+      <div class="grade">
+        <div class="campo">
+          <span class="rotulo"><label for="modelo">Modelo</label>
+            <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: modelo" aria-describedby="dica-modelo">i</button>
+              <span role="tooltip" id="dica-modelo" class="balao">O modelo que reconhece a fala. Os Whisper ("preciso", "rapido", "leve") pontuam e aceitam o contexto da mesa; o "preciso" é o melhor e pede GPU para ser rápido. Modelos ainda não baixados são baixados na primeira vez.</span></span></span>
+          <select id="modelo" name="modelo"></select>
+          <span class="dica" id="detalhe-modelo"></span>
+        </div>
+        <div class="campo">
+          <span class="rotulo"><label for="idioma">Idioma do áudio</label>
+            <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: idioma do áudio" aria-describedby="dica-idioma">i</button>
+              <span role="tooltip" id="dica-idioma" class="balao">O idioma falado na gravação. Informar acerta mais que detectar: a detecção olha só os primeiros segundos. Também é o idioma de origem da tradução.</span></span></span>
+          <select id="idioma" name="idioma"></select>
+        </div>
       </div>
-      <div>
-        <label for="nome_gm">Nome do GM</label>
-        <input id="nome_gm" name="nome_gm" value="GM">
+
+      <div class="campo" style="margin-top:16px">
+        <span class="rotulo"><label for="novo-termo">Contexto da mesa</label>
+          <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: contexto" aria-describedby="dica-contexto">i</button>
+            <span role="tooltip" id="dica-contexto" class="balao">Nomes próprios, lugares e jargão que aparecem na sessão — é onde o reconhecimento mais erra. Adicione um termo por item; um item também pode ser uma frase inteira, como "Campanha de Ravenloft, em Barovia". Os nomes das faixas já entram sozinhos. Os termos ficam guardados neste computador e voltam como sugestão.</span></span></span>
+        <div id="termos" class="itens"></div>
+        <div class="entrada-item">
+          <input id="novo-termo" placeholder="Strahd, Barovia, teste de resistência…" autocomplete="off">
+          <button type="button" class="botao-sec" id="adicionar-termo">Adicionar</button>
+        </div>
+        <div id="bloco-sugestoes" class="oculto">
+          <span class="dica">Usados antes — toque para adicionar, × para esquecer:</span>
+          <div id="sugestoes" class="sugestoes"></div>
+        </div>
       </div>
-      <div>
-        <label for="jogadores">Locutores na faixa 2</label>
-        <input id="jogadores" name="jogadores" value="5">
-        <div class="dica">Use <code>auto</code> para estimar</div>
+    </section>
+
+    <!-- 4. Tradução -->
+    <section class="cartao">
+      <header><h2><span class="passo">4</span> Tradução <span class="dica">(opcional)</span></h2></header>
+      <div class="campo">
+        <span class="rotulo"><label for="busca-idioma">Traduzir também para</label>
+          <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: tradução" aria-describedby="dica-traducao">i</button>
+            <span role="tooltip" id="dica-traducao" class="balao" ></span></span></span>
+        <div id="traducoes" class="itens"></div>
+        <div class="multi">
+          <input id="busca-idioma" role="combobox" aria-expanded="false" aria-controls="lista-idiomas"
+            aria-autocomplete="list" placeholder="Buscar idioma… (ex.: ingles, es)" autocomplete="off">
+          <ul id="lista-idiomas" class="lista oculto" role="listbox" aria-multiselectable="true"></ul>
+        </div>
       </div>
-      <div>
-        <label for="faixa_gm">Faixa do GM</label>
-        <input id="faixa_gm" name="faixa_gm" type="number" min="1" value="1">
+    </section>
+
+    <!-- 5. Recorte -->
+    <section class="cartao">
+      <header>
+        <h2><span class="passo">5</span> Transcrever só um trecho
+          <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: recorte" aria-describedby="dica-recorte">i</button>
+            <span role="tooltip" id="dica-recorte" class="balao">Útil para testar os ajustes em poucos minutos antes de transcrever a sessão inteira. Desligado, a gravação é transcrita do começo ao fim, e os campos abaixo são ignorados.</span></span>
+        </h2>
+        <label class="interruptor"><input type="checkbox" id="recorte-ativo"><span class="trilho"></span> Ativar</label>
+      </header>
+      <div class="grade">
+        <div class="campo">
+          <span class="rotulo"><label for="inicio">A partir de (segundos)</label>
+            <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: início" aria-describedby="dica-inicio">i</button>
+              <span role="tooltip" id="dica-inicio" class="balao">O segundo da gravação em que a transcrição começa. Os horários no resultado continuam batendo com o vídeo original.</span></span></span>
+          <input id="inicio" type="number" min="0" step="1" value="0" disabled>
+        </div>
+        <div class="campo">
+          <span class="rotulo"><label for="fim">Até (segundos)</label>
+            <span class="ajuda"><button type="button" class="info" aria-label="Ajuda: fim" aria-describedby="dica-fim">i</button>
+              <span role="tooltip" id="dica-fim" class="balao">O segundo em que a transcrição termina. Em branco, vai até o fim da gravação. Cinco minutos (300 s) costumam bastar para um teste.</span></span></span>
+          <input id="fim" type="number" min="0" step="1" placeholder="fim da gravação" disabled>
+        </div>
       </div>
-      <div>
-        <label for="faixa_grupo">Faixa dos jogadores</label>
-        <input id="faixa_grupo" name="faixa_grupo" type="number" min="1" value="2">
-      </div>
-      <div>
-        <label for="deslocamento">Ajuste da faixa 2 (s)</label>
-        <input id="deslocamento" name="deslocamento" type="number" step="0.1" value="0">
-      </div>
-      <div>
-        <label for="inicio">Transcrever a partir de (s)</label>
-        <input id="inicio" name="inicio" type="number" step="1" min="0" value="0">
-      </div>
-      <div>
-        <label for="fim">Até (s)</label>
-        <input id="fim" name="fim" type="number" step="1" min="0" placeholder="fim do vídeo">
-        <div class="dica">Recorte curto para testar os ajustes antes da sessão inteira</div>
-      </div>
+    </section>
+
+    <div class="acoes">
+      <button id="enviar" class="botao" type="submit">Transcrever</button>
+      <button id="outro-video" class="botao-sec oculto" type="button">Enviar outro arquivo</button>
     </div>
-
-    <div style="margin-top:14px">
-      <label for="nomes">Nomes dos jogadores (opcional)</label>
-      <input id="nomes" name="nomes" placeholder="Ana, Bruno, Caio, Duda, Edu">
-      <div class="dica">Na ordem em que falam pela primeira vez. Em branco vira “Jogador 1…5”.</div>
-    </div>
-
-    <div style="margin-top:14px">
-      <label for="contexto">Contexto da mesa (opcional)</label>
-      <textarea id="contexto" name="contexto" rows="2"
-        placeholder="Campanha de Ravenloft. Strahd von Zarovich, Barovia, Ireena. Termos: iniciativa, teste de resistência."></textarea>
-      <div class="dica">
-        Nomes próprios, lugares e jargão que aparecem na sessão. É onde o
-        reconhecimento mais erra — citá-los aqui corrige a maioria. Os nomes do
-        GM e dos jogadores já entram sozinhos.
-      </div>
-    </div>
-
-    <div class="grade" style="margin-top:14px">
-      <div>
-        <label for="idioma">Idioma do áudio</label>
-        <input id="idioma" name="idioma" value="pt">
-      </div>
-      <div>
-        <label for="traduzir">Traduzir também para</label>
-        <input id="traduzir" name="traduzir" placeholder="en (opcional)">
-      </div>
-    </div>
-
-    <p style="margin:20px 0 0"><button id="enviar" type="submit">Transcrever</button></p>
-    <p class="aviso" id="aviso-tempo"></p>
   </form>
 
-  <div id="painel-estado" class="cartao oculto">
-    <div class="linha-estado"><span id="mensagem">Enviando…</span><b id="percentual">0%</b></div>
-    <div class="barra"><i id="preenchimento"></i></div>
-    <div id="detalhe-erro" class="aviso"></div>
-  </div>
+  <section id="painel-estado" class="cartao oculto" style="margin-top:16px" aria-live="polite">
+    <div class="linha-estado">
+      <span class="etapa" id="etapa">Enviando…</span>
+      <span class="numeros"><span id="restante"></span><span id="decorrido"></span><b id="percentual">0%</b></span>
+    </div>
+    <div class="barra" role="progressbar" aria-labelledby="etapa" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barra"><i id="preenchimento"></i></div>
+    <div id="bloco-erro" class="oculto" style="margin-top:14px">
+      <p class="nota erro" id="detalhe-erro" role="alert"></p>
+      <div class="acoes" style="margin-top:12px">
+        <button type="button" class="botao" id="tentar-novamente">Tentar novamente</button>
+        <span class="dica">ou ajuste a configuração acima e reenvie — o vídeo não precisa subir de novo.</span>
+      </div>
+    </div>
+  </section>
 
-  <div id="painel-resultado" class="cartao oculto">
+  <section id="painel-resultado" class="cartao oculto">
     <div class="resumo">
       <span><b id="r-falas">0</b> falas</span>
       <span><b id="r-duracao">0</b> min</span>
       <span>Locutores: <b id="r-locutores">—</b></span>
     </div>
     <div class="arquivos" id="r-arquivos"></div>
+    <div id="r-avisos" style="margin-top:12px"></div>
     <div class="previa" id="r-previa"></div>
-    <p class="aviso" id="r-nota"></p>
-  </div>
+  </section>
 </div>
 
+<dialog id="dialogo-repetidos" aria-labelledby="titulo-repetidos">
+  <h2 id="titulo-repetidos">Nome repetido em mais de uma faixa</h2>
+  <div id="texto-repetidos"></div>
+  <p class="dica">Pode ser de propósito. Se não for, revise os nomes destacados.</p>
+  <div class="acoes" style="justify-content:flex-end">
+    <button type="button" class="botao-sec" id="revisar">Revisar</button>
+    <button type="button" class="botao" id="continuar">Continuar</button>
+  </div>
+</dialog>
+
 <script>
+"use strict";
 const $ = (id) => document.getElementById(id);
-let sondagem = null;
+
+// Cria um elemento só com textContent: nada que venha do servidor ou do usuário
+// vira HTML.
+function el(tag, atributos = {}, ...filhos) {
+  const elemento = document.createElement(tag);
+  for (const [chave, valor] of Object.entries(atributos)) {
+    if (chave === "classe") elemento.className = valor;
+    else if (chave === "texto") elemento.textContent = valor;
+    else if (chave.startsWith("on")) elemento.addEventListener(chave.slice(2), valor);
+    else elemento.setAttribute(chave, valor);
+  }
+  for (const filho of filhos) elemento.append(filho);
+  return elemento;
+}
+
+let contadorDicas = 0;
+function dica(texto) {
+  const id = `dica-dinamica-${++contadorDicas}`;
+  return el("span", { classe: "ajuda" },
+    el("button", { type: "button", classe: "info", "aria-label": "Ajuda", "aria-describedby": id, texto: "i" }),
+    el("span", { role: "tooltip", id, classe: "balao", texto }));
+}
+
+function semAcento(texto) {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// "80 MB", "1,4 GB": MB abaixo de 1 GB, vírgula decimal.
+function tamanho(bytes) {
+  if (bytes < 1e9) return `${Math.max(1, Math.round(bytes / 1e6)).toLocaleString("pt-BR")} MB`;
+  return `${(bytes / 1e9).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} GB`;
+}
 
 function tempo(segundos) {
   const m = Math.floor(segundos / 60), s = Math.floor(segundos % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-async function carregarOpcoes() {
-  const dados = await (await fetch("/api/modelos")).json();
-  $("modelo").innerHTML = dados.modelos.map((m) =>
-    `<option value="${m.apelido}"${m.apelido === dados.modelo_padrao ? " selected" : ""}>` +
-    `${m.apelido} — ${m.descricao}${m.baixado ? "" : ` (baixa ~${m.tamanho_mb} MB na 1ª vez)`}</option>`
-  ).join("");
-  if (!dados.ffmpeg) {
-    const alerta = $("alerta-ffmpeg");
-    alerta.textContent = "ffmpeg não encontrado. Instale com “sudo apt install ffmpeg” " +
-      "ou “pip install imageio-ffmpeg” antes de enviar o vídeo.";
-    alerta.classList.remove("oculto");
+// --- Listas de itens (nomes de uma faixa, termos do contexto) --------------
+
+function criarLista({ placeholder, rotulo, aoMudar }) {
+  const valores = [];
+  const itens = el("div", { classe: "itens" });
+  const entrada = el("input", { placeholder, autocomplete: "off", "aria-label": rotulo });
+  const botao = el("button", { type: "button", classe: "botao-sec", texto: "Adicionar" });
+
+  function desenhar() {
+    itens.replaceChildren(...valores.map((valor, i) => el("span", { classe: "item", "data-valor": valor },
+      el("span", { texto: valor }),
+      el("button", {
+        type: "button", classe: "botao-icone", "aria-label": `Remover ${valor}`, texto: "×",
+        onclick: () => { valores.splice(i, 1); desenhar(); aoMudar(); },
+      }))));
   }
+  function adicionar(valor) {
+    const limpo = valor.trim().replace(/\s+/g, " ");
+    if (!limpo || valores.some((v) => v.toLowerCase() === limpo.toLowerCase())) return false;
+    valores.push(limpo);
+    desenhar();
+    aoMudar();
+    return true;
+  }
+  function doCampo() { if (adicionar(entrada.value)) entrada.value = ""; }
+  entrada.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); doCampo(); }
+  });
+  botao.addEventListener("click", doCampo);
+  return {
+    valores,
+    adicionar,
+    pendente: () => entrada.value.trim(),
+    confirmarPendente: doCampo,
+    elemento: el("div", { classe: "campo" }, itens, el("div", { classe: "entrada-item" }, entrada, botao)),
+    itens,
+  };
+}
+
+// --- Faixas ------------------------------------------------------------------
+
+let totalNoArquivo = null;   // conhecido só depois de o servidor ler o arquivo
+const LIMITE_SEM_ARQUIVO = 8;
+const faixas = [];           // { numero, tipo, nome, pessoas, deslocamento, nomes (lista), elemento }
+
+function numerosDisponiveis() {
+  const limite = totalNoArquivo || LIMITE_SEM_ARQUIVO;
+  return Array.from({ length: limite }, (_, i) => i + 1);
+}
+
+function adicionarFaixa({ numero, tipo = "uma", nome = "", pessoas = "" } = {}) {
+  const usados = new Set(faixas.map((f) => f.numero));
+  numero = numero || numerosDisponiveis().find((n) => !usados.has(n)) || faixas.length + 1;
+  const faixa = { numero, tipo, nome, pessoas, deslocamento: 0 };
+  faixa.nomes = criarLista({ placeholder: "Nome de quem fala (opcional)", rotulo: "Nome de uma pessoa da faixa", aoMudar: agendarVerificacao });
+  faixas.push(faixa);
+  desenharFaixas();
+  agendarVerificacao();
+}
+
+function desenharFaixas() {
+  $("faixas").replaceChildren(...faixas.map(desenharFaixa));
+}
+
+function desenharFaixa(faixa, indice) {
+  const id = `faixa-${indice}`;
+  const seletor = el("select", { "aria-label": `Número da faixa ${indice + 1} no arquivo` });
+  const numeros = numerosDisponiveis();
+  if (!numeros.includes(faixa.numero)) numeros.push(faixa.numero);
+  for (const n of numeros) seletor.append(el("option", { value: String(n), texto: String(n) }));
+  seletor.value = String(faixa.numero);
+  seletor.addEventListener("change", () => { faixa.numero = Number(seletor.value); desenharFaixas(); agendarVerificacao(); });
+
+  const tipo = (valor, texto) => {
+    const radio = el("input", { type: "radio", name: `${id}-tipo`, value: valor });
+    radio.checked = faixa.tipo === valor;
+    radio.addEventListener("change", () => { faixa.tipo = valor; desenharFaixas(); agendarVerificacao(); });
+    return el("label", {}, radio, el("span", { texto }));
+  };
+
+  const topo = el("div", { classe: "faixa-topo" },
+    el("span", { classe: "titulo" }, "Faixa ", seletor, " do arquivo",
+      dica("O número da trilha de áudio no arquivo, contando a partir de 1, como o OBS numera. Se não souber, rode \"transcritor faixas arquivo.mkv\".")),
+    el("span", { classe: "segmentos", role: "radiogroup", "aria-label": "Quem fala nesta faixa" },
+      tipo("uma", "Uma pessoa"), tipo("varias", "Várias pessoas")),
+    el("button", {
+      type: "button", classe: "botao-icone", "aria-label": `Remover a faixa ${faixa.numero}`, texto: "×",
+      onclick: () => { faixas.splice(indice, 1); desenharFaixas(); agendarVerificacao(); },
+    }));
+
+  let corpo;
+  if (faixa.tipo === "uma") {
+    const nome = el("input", { id: `${id}-nome`, value: faixa.nome, placeholder: `Faixa ${faixa.numero}`, "data-nome": "" });
+    nome.addEventListener("input", () => { faixa.nome = nome.value; agendarVerificacao(); });
+    corpo = el("div", { classe: "campo" },
+      el("span", { classe: "rotulo" }, el("label", { for: `${id}-nome`, texto: "Nome" }),
+        dica("Todas as falas desta faixa recebem este nome. Em branco, vira \"Faixa N\".")),
+      nome);
+  } else {
+    const pessoas = el("input", { id: `${id}-pessoas`, type: "number", min: "1", step: "1", value: faixa.pessoas, placeholder: "estimar" });
+    pessoas.addEventListener("input", () => { faixa.pessoas = pessoas.value; });
+    corpo = el("div", { classe: "grade" },
+      el("div", { classe: "campo" },
+        el("span", { classe: "rotulo" }, el("label", { for: `${id}-pessoas`, texto: "Quantas pessoas" }),
+          dica("Quantas vozes diferentes falam nesta faixa. Em branco, usa a quantidade de nomes; sem nomes, estima pelo timbre — o que é menos confiável.")),
+        pessoas),
+      el("div", { classe: "campo" },
+        el("span", { classe: "rotulo" }, el("span", { texto: "Nomes (opcional)" }),
+          dica("Na ordem em que cada voz fala pela primeira vez — não na ordem da mesa. Quem ficar sem nome vira \"Jogador 1\", \"Jogador 2\"… Dica: rode uma vez sem nomes, veja quem é quem e rode de novo.")),
+        faixa.nomes.elemento));
+  }
+
+  const deslocamento = el("input", { id: `${id}-desloc`, type: "number", step: "0.1", value: String(faixa.deslocamento) });
+  deslocamento.addEventListener("input", () => { faixa.deslocamento = Number(deslocamento.value) || 0; });
+  const ajuste = el("details", {},
+    el("summary", { texto: "Ajuste de sincronia" }),
+    el("div", { classe: "campo", style: "max-width:220px" },
+      el("span", { classe: "rotulo" }, el("label", { for: `${id}-desloc`, texto: "Deslocamento (s)" }),
+        dica("Se as falas desta faixa aparecem sempre adiantadas ou atrasadas em relação às outras, mova-as no tempo. Valores negativos adiantam.")),
+      deslocamento));
+  if (faixa.deslocamento) ajuste.open = true;
+
+  const fora = totalNoArquivo && faixa.numero > totalNoArquivo;
+  const conjunto = el("fieldset", { classe: fora ? "faixa fora" : "faixa", "data-numero": String(faixa.numero) }, topo, corpo, ajuste);
+  if (fora) conjunto.append(el("p", { classe: "nota erro", texto: `O arquivo só tem ${totalNoArquivo} faixa(s): escolha outra ou remova esta.` }));
+  faixa.elemento = conjunto;
+  return conjunto;
+}
+
+// O objeto enviado para cada faixa, no formato de faixas.ler_json do servidor.
+function faixaParaApi(faixa) {
+  faixa.nomes.confirmarPendente();
+  return {
+    numero: faixa.numero,
+    tipo: faixa.tipo,
+    nome: faixa.nome.trim(),
+    nomes: faixa.tipo === "varias" ? [...faixa.nomes.valores] : [],
+    pessoas: faixa.tipo === "varias" && faixa.pessoas !== "" ? Number(faixa.pessoas) : null,
+    deslocamento: faixa.deslocamento,
+  };
+}
+
+// --- Verificação das faixas, enquanto se digita ------------------------------
+
+let espera = null;
+function agendarVerificacao() {
+  clearTimeout(espera);
+  espera = setTimeout(verificarFaixas, 350);
+}
+
+async function verificarFaixas() {
+  const corpo = new FormData();
+  corpo.set("faixas", JSON.stringify(faixas.map(faixaParaApi)));
+  let resposta;
+  try {
+    resposta = await (await fetch("/api/faixas/verificar", { method: "POST", body: corpo })).json();
+  } catch {
+    return { erros: [], avisos: [], repetidos: [] };  // sem resposta: o envio confere de novo
+  }
+  destacarRepetidos(resposta.repetidos);
+  const situacao = $("situacao-faixas");
+  situacao.replaceChildren();
+  if (resposta.erros.length) situacao.append(el("p", { classe: "nota erro", texto: resposta.erros.join(" ") }));
+  else if (resposta.avisos.length) situacao.append(listaDeAvisos(resposta.avisos));
+  return resposta;
+}
+
+function destacarRepetidos(repetidos) {
+  for (const marcado of document.querySelectorAll(".repetido")) marcado.classList.remove("repetido");
+  for (const { nome, faixas: numeros } of repetidos) {
+    const chave = nome.toLowerCase();
+    for (const faixa of faixas) {
+      if (!numeros.includes(faixa.numero) || !faixa.elemento) continue;
+      for (const campo of faixa.elemento.querySelectorAll("[data-nome]")) {
+        if ((campo.value.trim() || `Faixa ${faixa.numero}`).toLowerCase() === chave) campo.classList.add("repetido");
+      }
+      for (const item of faixa.elemento.querySelectorAll(".item")) {
+        if (item.dataset.valor.toLowerCase() === chave) item.classList.add("repetido");
+      }
+    }
+  }
+}
+
+function listaDeAvisos(avisos) {
+  const nota = el("div", { classe: "nota alerta", role: "status" });
+  if (avisos.length === 1) nota.textContent = avisos[0];
+  else nota.append(el("ul", {}, ...avisos.map((a) => el("li", { texto: a }))));
+  return nota;
+}
+
+function confirmarRepetidos(avisos) {
+  const dialogo = $("dialogo-repetidos");
+  $("texto-repetidos").replaceChildren(listaDeAvisos(avisos));
+  return new Promise((resolver) => {
+    const fechar = (resposta) => { dialogo.close(); resolver(resposta); };
+    $("continuar").onclick = () => fechar(true);
+    $("revisar").onclick = () => fechar(false);
+    dialogo.oncancel = (e) => { e.preventDefault(); fechar(false); };
+    dialogo.showModal();
+    $("revisar").focus();
+  });
+}
+
+// --- Contexto da mesa --------------------------------------------------------
+
+const termos = criarLista({ placeholder: "", rotulo: "Termo do contexto", aoMudar: desenharSugestoes });
+$("termos").replaceWith(termos.itens);
+termos.itens.id = "termos";
+$("novo-termo").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); adicionarTermo(); }
+});
+$("novo-termo").addEventListener("input", desenharSugestoes);
+$("adicionar-termo").addEventListener("click", adicionarTermo);
+function adicionarTermo() {
+  if (termos.adicionar($("novo-termo").value)) $("novo-termo").value = "";
+}
+
+let historico = [];
+async function carregarHistorico() {
+  try {
+    historico = (await (await fetch("/api/historico/contexto")).json()).termos;
+  } catch { historico = []; }
+  desenharSugestoes();
+}
+
+function desenharSugestoes() {
+  const filtro = semAcento($("novo-termo").value.trim());
+  const escolhidos = new Set(termos.valores.map((v) => v.toLowerCase()));
+  const visiveis = historico
+    .filter((h) => !escolhidos.has(h.toLowerCase()) && semAcento(h).includes(filtro))
+    .slice(0, 30);
+  $("bloco-sugestoes").classList.toggle("oculto", visiveis.length === 0);
+  $("sugestoes").replaceChildren(...visiveis.map((termo) => el("span", { classe: "sugestao" },
+    el("button", { type: "button", texto: termo, onclick: () => termos.adicionar(termo) }),
+    el("button", {
+      type: "button", classe: "botao-icone", "aria-label": `Esquecer ${termo}`, texto: "×",
+      onclick: () => esquecer(termo),
+    }))));
+}
+
+async function esquecer(termo) {
+  const resposta = await fetch(`/api/historico/contexto?termo=${encodeURIComponent(termo)}`, { method: "DELETE" });
+  if (resposta.ok) historico = (await resposta.json()).termos;
+  else historico = historico.filter((h) => h !== termo);
+  desenharSugestoes();
+}
+
+// --- Idiomas -----------------------------------------------------------------
+
+let idiomasTraducao = [];
+const escolhidos = [];
+let ativa = -1;
+
+function desenharEscolhidos() {
+  $("traducoes").replaceChildren(...escolhidos.map((codigo) => {
+    const idioma = idiomasTraducao.find((i) => i.codigo === codigo);
+    return el("span", { classe: "item" }, el("span", { texto: idioma ? idioma.nome : codigo }),
+      el("button", {
+        type: "button", classe: "botao-icone", "aria-label": `Remover ${idioma ? idioma.nome : codigo}`, texto: "×",
+        onclick: () => alternarIdioma(codigo),
+      }));
+  }));
+}
+
+function alternarIdioma(codigo) {
+  const posicao = escolhidos.indexOf(codigo);
+  if (posicao >= 0) escolhidos.splice(posicao, 1); else escolhidos.push(codigo);
+  desenharEscolhidos();
+  desenharListaIdiomas();
+}
+
+function idiomasFiltrados() {
+  const filtro = semAcento($("busca-idioma").value.trim());
+  return idiomasTraducao.filter((i) => !filtro || semAcento(i.nome).includes(filtro) || i.codigo.toLowerCase() === filtro);
+}
+
+function desenharListaIdiomas() {
+  const lista = $("lista-idiomas");
+  const visiveis = idiomasFiltrados();
+  ativa = Math.min(ativa, visiveis.length - 1);
+  lista.replaceChildren(...visiveis.map((idioma, i) => el("li", {
+    classe: i === ativa ? "opcao ativa" : "opcao", role: "option", id: `idioma-${idioma.codigo}`,
+    "aria-selected": String(escolhidos.includes(idioma.codigo)),
+    onmousedown: (e) => { e.preventDefault(); alternarIdioma(idioma.codigo); },
+  }, el("span", { texto: idioma.nome }), el("small", { texto: idioma.codigo }))));
+  if (!visiveis.length) lista.append(el("li", { classe: "opcao", "aria-disabled": "true", texto: "Nenhum idioma encontrado" }));
+  const atual = visiveis[ativa];
+  $("busca-idioma").setAttribute("aria-activedescendant", atual ? `idioma-${atual.codigo}` : "");
+  if (atual) lista.querySelector(".ativa")?.scrollIntoView({ block: "nearest" });
+}
+
+function abrirLista(abrir) {
+  $("lista-idiomas").classList.toggle("oculto", !abrir);
+  $("busca-idioma").setAttribute("aria-expanded", String(abrir));
+  if (abrir) desenharListaIdiomas();
+}
+
+$("busca-idioma").addEventListener("focus", () => abrirLista(true));
+$("busca-idioma").addEventListener("input", () => { ativa = 0; abrirLista(true); });
+$("busca-idioma").addEventListener("blur", () => abrirLista(false));
+$("busca-idioma").addEventListener("keydown", (e) => {
+  const visiveis = idiomasFiltrados();
+  if (e.key === "ArrowDown") { e.preventDefault(); ativa = Math.min(ativa + 1, visiveis.length - 1); abrirLista(true); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); ativa = Math.max(ativa - 1, 0); abrirLista(true); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (visiveis[ativa]) alternarIdioma(visiveis[ativa].codigo);
+  } else if (e.key === "Escape") { abrirLista(false); }
+});
+
+async function carregarIdiomas() {
+  const dados = await (await fetch("/api/idiomas")).json();
+  const audio = $("idioma");
+  audio.replaceChildren(...dados.audio.idiomas.map((i) => el("option", { value: i.codigo, texto: i.nome })));
+  audio.value = dados.audio.padrao;
+  idiomasTraducao = dados.traducao.idiomas;
+  $("dica-traducao").textContent =
+    `Gera também a transcrição traduzida, um arquivo por idioma. Motor: ${dados.traducao.descricao}. ` +
+    "Só o texto das falas é traduzido; o que falhar fica no idioma original, no lugar dele.";
+}
+
+// --- Modelos e recorte -------------------------------------------------------
+
+let modelos = [];
+
+// A opção do seletor fica curta (o nome); a descrição vai na linha de baixo,
+// onde cabe inteira em qualquer largura de tela.
+async function carregarModelos() {
+  const dados = await (await fetch("/api/modelos")).json();
+  modelos = dados.modelos;
+  $("modelo").replaceChildren(...modelos.map((m) => el("option", {
+    value: m.apelido,
+    texto: m.apelido + (m.apelido === dados.modelo_padrao ? " (padrão)" : "") + (m.baixado ? "" : " · a baixar"),
+  })));
+  $("modelo").value = dados.modelo_padrao;
+  descreverModelo();
+  if (!dados.ffmpeg) {
+    $("alerta-ffmpeg").textContent = "ffmpeg não encontrado. Instale com “sudo apt install ffmpeg” " +
+      "ou “pip install imageio-ffmpeg” antes de enviar o arquivo.";
+    $("alerta-ffmpeg").classList.remove("oculto");
+  }
+}
+
+function descreverModelo() {
+  const modelo = modelos.find((m) => m.apelido === $("modelo").value);
+  if (!modelo) return;
+  const download = modelo.baixado ? "" : ` Baixa ${tamanho(modelo.tamanho_mb * 1e6)} na primeira vez.`;
+  $("detalhe-modelo").textContent = `${modelo.descricao}.${download}`;
+}
+$("modelo").addEventListener("change", descreverModelo);
+
+$("recorte-ativo").addEventListener("change", () => {
+  const ativo = $("recorte-ativo").checked;
+  $("inicio").disabled = !ativo;
+  $("fim").disabled = !ativo;
+});
+
+$("video").addEventListener("change", () => {
+  const arquivo = $("video").files[0];
+  $("aviso-tempo").textContent = arquivo
+    ? `${arquivo.name} · ${tamanho(arquivo.size)}. A transcrição costuma levar entre 0,3× e 1× a duração da gravação.`
+    : "Para gravações longas, a linha de comando evita copiar o arquivo inteiro.";
+});
+
+// Arrastar e soltar: o arquivo solto vira a escolha do campo, como se tivesse
+// sido escolhido pelo botão.
+const area = $("area-arquivo");
+for (const evento of ["dragenter", "dragover"]) {
+  area.addEventListener(evento, (e) => {
+    if ($("video").disabled) return;
+    e.preventDefault();
+    area.classList.add("arrastando");
+  });
+}
+for (const evento of ["dragleave", "drop"]) {
+  area.addEventListener(evento, (e) => {
+    if (evento === "dragleave" && area.contains(e.relatedTarget)) return;
+    area.classList.remove("arrastando");
+  });
+}
+area.addEventListener("drop", (e) => {
+  if ($("video").disabled) return;
+  e.preventDefault();
+  if (!e.dataTransfer.files.length) return;
+  const escolha = new DataTransfer();
+  escolha.items.add(e.dataTransfer.files[0]);
+  $("video").files = escolha.files;
+  $("video").dispatchEvent(new Event("change"));
+});
+// Um arquivo solto fora da área não deve fazer o navegador abri-lo no lugar da página.
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+// --- Envio -------------------------------------------------------------------
+
+// Quando o servidor já guarda a cópia (envio recusado ou que falhou), o próximo
+// envio manda só a configuração.
+let copiaGuardada = null;
+
+function montarConfiguracao() {
+  const dados = new FormData();
+  dados.set("modelo", $("modelo").value);
+  dados.set("idioma", $("idioma").value);
+  dados.set("faixas", JSON.stringify(faixas.map(faixaParaApi)));
+  termos.confirmarPendente();
+  if ($("novo-termo").value.trim()) adicionarTermo();
+  dados.set("termos", termos.valores.join("\n"));
+  dados.set("traduzir", escolhidos.join(","));
+  if ($("recorte-ativo").checked) {
+    dados.set("inicio", $("inicio").value || "0");
+    dados.set("fim", $("fim").value);
+  }
+  return dados;
+}
+
+function enviarComProgresso(dados) {
+  // XMLHttpRequest, e não fetch: só ele informa o andamento do upload.
+  return new Promise((resolver, rejeitar) => {
+    const pedido = new XMLHttpRequest();
+    pedido.open("POST", "/api/trabalhos");
+    pedido.upload.onprogress = (e) => {
+      if (e.lengthComputable) mostrarEstado("Enviando o arquivo…", (e.loaded / e.total) * 0.999, "", "");
+    };
+    pedido.onload = () => resolver({ status: pedido.status, ok: pedido.status < 300, corpo: lerJson(pedido.responseText) });
+    pedido.onerror = () => rejeitar(new Error("a conexão com o servidor falhou"));
+    pedido.send(dados);
+  });
+}
+
+function lerJson(texto) {
+  try { return JSON.parse(texto); } catch { return { detail: texto }; }
 }
 
 $("formulario").addEventListener("submit", async (evento) => {
   evento.preventDefault();
-  const dados = new FormData($("formulario"));
-  dados.set("juntar", "true");
+  if (!copiaGuardada && !$("video").files.length) {
+    $("video").focus();
+    return falhar("Escolha o arquivo da gravação.", false);
+  }
+  const verificacao = await verificarFaixas();
+  if (verificacao.erros.length) return;
+  if (verificacao.avisos.length && !(await confirmarRepetidos(verificacao.avisos))) {
+    document.querySelector(".repetido")?.focus();
+    return;
+  }
+
+  const dados = montarConfiguracao();
   $("enviar").disabled = true;
   $("painel-resultado").classList.add("oculto");
-  $("painel-estado").classList.remove("oculto");
-  $("detalhe-erro").textContent = "";
-  atualizar("Enviando o vídeo…", 0);
+  $("bloco-erro").classList.add("oculto");
+  mostrarEstado(copiaGuardada ? "Enviando a configuração…" : "Enviando o arquivo…", 0, "", "");
 
   let resposta;
   try {
-    resposta = await fetch("/api/trabalhos", { method: "POST", body: dados });
+    if (copiaGuardada) {
+      const http = await fetch(`/api/trabalhos/${copiaGuardada}/configuracao`, { method: "POST", body: dados });
+      resposta = { status: http.status, ok: http.ok, corpo: await http.json().catch(() => ({ detail: http.statusText })) };
+    } else {
+      dados.set("video", $("video").files[0]);
+      resposta = await enviarComProgresso(dados);
+    }
   } catch (erro) {
-    return falhar("Não foi possível enviar o arquivo: " + erro.message);
+    return falhar(`Não foi possível enviar: ${erro.message}`, false);
   }
-  if (!resposta.ok) {
-    const corpo = await resposta.json().catch(() => ({ detail: resposta.statusText }));
-    return falhar(corpo.detail);
-  }
-  const { id } = await resposta.json();
-  atualizar("Na fila…", 0.01);
-  sondagem = setInterval(() => acompanhar(id), 1200);
+
+  if (resposta.status === 422) return aplicarRecusa(resposta.corpo);
+  if (!resposta.ok) return falhar(resposta.corpo.detail || "O servidor recusou o envio.", false);
+  acompanhar(resposta.corpo.id);
 });
 
-function atualizar(mensagem, fracao) {
-  $("mensagem").textContent = mensagem;
-  $("percentual").textContent = Math.round(fracao * 100) + "%";
-  $("preenchimento").style.width = (fracao * 100) + "%";
+function guardarCopia(id, mensagem) {
+  copiaGuardada = id;
+  $("aviso-copia").textContent = mensagem;
+  $("aviso-copia").classList.remove("oculto");
+  $("video").disabled = true;
+  $("outro-video").classList.remove("oculto");
+  $("enviar").textContent = "Reenviar só a configuração";
 }
 
-function falhar(detalhe) {
-  clearInterval(sondagem);
+$("outro-video").addEventListener("click", () => {
+  copiaGuardada = null;
+  totalNoArquivo = null;
+  $("aviso-copia").classList.add("oculto");
+  $("video").disabled = false;
+  $("video").value = "";
+  $("outro-video").classList.add("oculto");
+  $("enviar").textContent = "Transcrever";
+  $("painel-estado").classList.add("oculto");
+  desenharFaixas();
+});
+
+function aplicarRecusa(corpo) {
   $("enviar").disabled = false;
-  $("painel-estado").classList.add("erro");
-  $("mensagem").textContent = "Falhou";
+  $("painel-estado").classList.add("oculto");
+  totalNoArquivo = corpo.total_faixas;
+  desenharFaixas();
+  guardarCopia(corpo.id,
+    `${corpo.detail} O arquivo tem ${corpo.total_faixas} faixa(s): ${corpo.faixas_no_arquivo.join("; ")}. ` +
+    "A cópia ficou guardada no servidor: ajuste as faixas e reenvie só a configuração.");
+  document.querySelector(".faixa.fora select")?.focus();
+}
+
+// --- Acompanhamento ------------------------------------------------------------
+
+let sondagem = null;
+
+function mostrarEstado(etapa, fracao, restante, decorrido) {
+  $("painel-estado").classList.remove("oculto");
+  $("etapa").textContent = etapa;
+  const porcento = Math.round(fracao * 100);
+  $("percentual").textContent = `${porcento}%`;
+  $("preenchimento").style.width = `${fracao * 100}%`;
+  $("barra").setAttribute("aria-valuenow", String(porcento));
+  $("restante").textContent = restante;
+  $("decorrido").textContent = decorrido;
+}
+
+function falhar(detalhe, comCopia) {
+  clearTimeout(sondagem);
+  $("enviar").disabled = false;
+  $("painel-estado").classList.remove("oculto");
+  $("etapa").textContent = "Não deu certo";
   $("detalhe-erro").textContent = detalhe;
+  $("bloco-erro").classList.remove("oculto");
+  $("tentar-novamente").classList.toggle("oculto", !comCopia);
 }
 
 async function acompanhar(id) {
-  const t = await (await fetch(`/api/trabalhos/${id}`)).json();
-  if (t.estado === "erro") return falhar(t.erro);
-  atualizar(t.mensagem, t.progresso);
-  if (t.estado !== "concluido") return;
+  clearTimeout(sondagem);
+  let t;
+  try {
+    t = await (await fetch(`/api/trabalhos/${id}`)).json();
+  } catch {
+    sondagem = setTimeout(() => acompanhar(id), 3000);  // servidor ocupado: tenta de novo
+    return;
+  }
+  if (t.estado === "erro") {
+    guardarCopia(id, "A cópia do arquivo ficou guardada no servidor: tente de novo, ou ajuste a configuração e reenvie.");
+    $("tentar-novamente").onclick = () => tentarDeNovo(id);
+    return falhar(t.erro, true);
+  }
+  const decorrido = t.decorrido ? `${tempo(t.decorrido)} decorrido` : "";
+  mostrarEstado(t.mensagem, t.progresso, t.restante_texto, decorrido);
+  if (t.estado !== "concluido") {
+    sondagem = setTimeout(() => acompanhar(id), 1200);
+    return;
+  }
+  concluir(id, t);
+}
 
-  clearInterval(sondagem);
+async function tentarDeNovo(id) {
+  $("bloco-erro").classList.add("oculto");
+  $("enviar").disabled = true;
+  mostrarEstado("Recomeçando…", 0, "", "");
+  const resposta = await fetch(`/api/trabalhos/${id}/tentar-novamente`, { method: "POST" });
+  const corpo = await resposta.json().catch(() => ({}));
+  if (resposta.status === 422) return aplicarRecusa(corpo);
+  if (!resposta.ok) return falhar(corpo.detail || "Não foi possível tentar de novo.", true);
+  acompanhar(id);
+}
+
+function concluir(id, t) {
   $("enviar").disabled = false;
+  copiaGuardada = null;
+  $("aviso-copia").classList.add("oculto");
+  $("video").disabled = false;
+  $("outro-video").classList.add("oculto");
+  $("enviar").textContent = "Transcrever";
+
   $("r-falas").textContent = t.total_falas;
   $("r-duracao").textContent = (t.duracao / 60).toFixed(1);
-  $("r-locutores").textContent = t.locutores.join(", ");
-  $("r-arquivos").innerHTML = t.arquivos.map((nome) =>
-    `<a href="/api/trabalhos/${id}/arquivos/${encodeURIComponent(nome)}" download>${nome}</a>`
-  ).join("");
-  $("r-previa").innerHTML = t.previa.map((f) =>
-    `<div class="fala faixa${f.faixa}"><time>${tempo(f.inicio)}</time>` +
-    `<b>${f.locutor}</b><span>${f.texto}</span></div>`
-  ).join("");
-  const notas = [...(t.avisos || [])];
+  $("r-locutores").textContent = t.locutores.join(", ") || "—";
+  $("r-arquivos").replaceChildren(...t.arquivos.map((nome) => el("a", {
+    href: `/api/trabalhos/${id}/arquivos/${encodeURIComponent(nome)}`, download: "", texto: nome,
+  })));
+  const notas = [...t.avisos];
   if (t.previa.length < t.total_falas) {
     notas.push(`Prévia das primeiras ${t.previa.length} falas — baixe um arquivo para ver tudo.`);
   }
-  $("r-nota").textContent = notas.join(" ");
+  $("r-avisos").replaceChildren(...(notas.length ? [listaDeAvisos(notas)] : []));
+  $("r-previa").replaceChildren(...t.previa.map((f) => el("div", { classe: "fala" },
+    el("time", { texto: tempo(f.inicio) }), el("b", { texto: f.locutor }), el("span", { texto: f.texto }))));
   $("painel-resultado").classList.remove("oculto");
+  $("painel-resultado").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-$("video").addEventListener("change", (e) => {
-  const arquivo = e.target.files[0];
-  $("aviso-tempo").textContent = arquivo
-    ? `${(arquivo.size / 1e9).toFixed(2)} GB. A transcrição costuma levar entre 0,3× e 1× a duração do vídeo.`
-    : "";
-});
+// --- Início ------------------------------------------------------------------
 
-carregarOpcoes();
+$("adicionar-faixa").addEventListener("click", () => adicionarFaixa({ tipo: "uma" }));
+adicionarFaixa({ numero: 1, tipo: "uma", nome: "GM" });
+adicionarFaixa({ numero: 2, tipo: "varias", pessoas: "5" });
+carregarModelos();
+carregarIdiomas();
+carregarHistorico();
 </script>
 </body>
 </html>
