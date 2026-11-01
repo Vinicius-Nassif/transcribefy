@@ -64,6 +64,7 @@ flowchart TD
 | `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
 | `traducao.py` | Motores de tradução: registro, idiomas oferecidos e tradução em lotes conferidos | `deep_translator` |
 | `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript`; traduz pelo motor ativo | `fala`, `mesclagem`, `traducao`, `pytranscript` |
+| `historico.py` | Termos de contexto já usados, num JSON em `dados/`, para a interface sugerir | nada do projeto |
 | `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
 | `progresso.py` | Custo de cada etapa por dispositivo e estimativa do tempo restante | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
@@ -375,6 +376,7 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
 | `test_transcricao.py` | Validação do WAV e escolha do motor |
 | `test_traducao.py` | Lotes, conferência da quantidade de linhas, falhas, registro de motores e idiomas |
+| `test_historico.py` | Ordem por uso, limite, arquivo corrompido e a API do histórico |
 | `test_progresso.py` | Quando há base para estimar, o texto do tempo restante, a API e a linha da CLI |
 | `test_web.py` | Contrato entre a API e o formulário da página |
 | `test_copias.py` | O que a limpeza pode e nunca pode apagar |
@@ -390,6 +392,10 @@ lugar dele é depois de mexer no `Dockerfile`, no compose ou nas dependências. 
 se isola numa pasta, num volume e numa porta próprios, então não atrapalha um
 container já rodando. O uso está em
 [`docs/docker.md`, seção 11](docker.md#11-teste-automatizado).
+
+O `conftest.py` redireciona `web.RAIZ_TRABALHOS` e `web.ARQUIVO_HISTORICO` para
+uma pasta temporária em **todos** os testes: nenhum deles escreve na pasta `dados/`
+real do projeto, nem por descuido.
 
 O `test_web.py` merece destaque: ele lê o HTML da interface e confere que todo campo
 enviado pelo formulário existe como parâmetro do endpoint, e que toda propriedade

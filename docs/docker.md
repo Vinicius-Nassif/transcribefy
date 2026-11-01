@@ -150,7 +150,7 @@ flowchart LR
 | No host | No container | Para quê |
 |---|---|---|
 | `midia/` | `/midia` | Gravações de entrada. Montada **somente para leitura**: a aplicação nunca escreve nos seus vídeos. |
-| `dados/` | `/app/dados` | Trabalhos enviados pela interface web, um diretório por envio. |
+| `dados/` | `/app/dados` | Trabalhos enviados pela interface web, um diretório por envio, e o histórico dos termos de contexto (`historico-contexto.json`). |
 | `saida/` | `/app/saida` | Transcrições geradas pela CLI. |
 | volume `modelos` | `/modelos` | Cache dos modelos de fala (Whisper e Vosk). |
 

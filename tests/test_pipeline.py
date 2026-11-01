@@ -91,6 +91,41 @@ def test_faixa_de_uma_pessoa_sem_nome_entra_com_o_nome_padrao():
     assert montado == "Participantes: Faixa 3."
 
 
+def test_os_termos_da_lista_viram_uma_frase_antes_do_texto_livre():
+    montado = pipeline.contexto_da_mesa(config(
+        faixas=faixas.padrao(nome_gm="Vini", nomes_jogadores=["Ana"]),
+        termos=["Strahd", "teste de resistência", "Strahd"],
+        contexto="Campanha de Ravenloft.",
+    ))
+    assert montado == (
+        "Participantes: Vini, Ana. Termos da sessão: Strahd, teste de resistência. "
+        "Campanha de Ravenloft."
+    )
+
+
+def test_os_rotulos_seguem_o_idioma_do_audio():
+    """Um rótulo em português puxaria a transcrição de um áudio em inglês."""
+    montado = pipeline.contexto_da_mesa(config(
+        idioma="en", faixas=[Faixa(0, faixas.UMA, "Vini")], termos=["Strahd"],
+    ))
+    assert montado == "Participants: Vini. Session terms: Strahd."
+
+
+@pytest.mark.parametrize("idioma", ["auto", "", "ja"])
+def test_sem_idioma_conhecido_as_listas_vao_sem_rotulo(idioma):
+    """Com detecção automática não se sabe o idioma: só os nomes, que não têm idioma."""
+    montado = pipeline.contexto_da_mesa(config(
+        idioma=idioma, faixas=[Faixa(0, faixas.UMA, "Vini")], termos=["Strahd", "Barovia"],
+        contexto="Texto livre.",
+    ))
+    assert montado == "Vini. Strahd, Barovia. Texto livre."
+
+
+def test_o_prompt_padrao_em_portugues_nao_mudou():
+    """Compatibilidade: sem termos, o prompt é o mesmo de antes desta mudança."""
+    assert pipeline.contexto_da_mesa(config()) == "Participantes: GM."
+
+
 def test_sem_nomes_nem_texto_o_contexto_fica_vazio():
     assert pipeline.contexto_da_mesa(config(faixas=[faixas.varias(1)])) == ""
 

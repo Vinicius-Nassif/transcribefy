@@ -45,6 +45,7 @@ class Configuracao:
     idioma: str = "pt"
     traducoes: Sequence[str] = ()
     contexto: str = ""
+    termos: Sequence[str] = ()
     dispositivo: str = "auto"
     inicio: float = 0.0
     fim: float | None = None
@@ -66,20 +67,45 @@ def inspecionar(video: Path) -> list[ffmpeg_tools.FaixaAudio]:
     return ffmpeg_tools.listar_faixas_audio(Path(video))
 
 
+# Rótulos das listas do prompt, no idioma do áudio. O Whisper tende a continuar
+# no idioma e no estilo do prompt; um rótulo em português num áudio em inglês o
+# puxaria para o lado errado. A detecção automática de idioma não é afetada (ela
+# olha só o áudio), mas com "auto" não sabemos o idioma: aí as listas vão sem
+# rótulo, só os nomes, que não pertencem a idioma nenhum.
+ROTULOS_CONTEXTO = {
+    "pt": ("Participantes", "Termos da sessão"),
+    "en": ("Participants", "Session terms"),
+    "es": ("Participantes", "Términos de la sesión"),
+    "fr": ("Participants", "Termes de la session"),
+    "de": ("Teilnehmer", "Begriffe der Sitzung"),
+    "it": ("Partecipanti", "Termini della sessione"),
+}
+
+
 def contexto_da_mesa(config: Configuracao) -> str:
     """Monta a dica de contexto que o Whisper recebe antes de transcrever.
 
     Os nomes da mesa entram junto com o texto livre porque é neles que um
     reconhecedor mais erra: sem a dica, um nome próprio vira a palavra comum
     mais parecida. A dica é um prompt, não uma regra — ela enviesa, não obriga.
+
+    Ordem: os participantes, os termos (a lista da interface web, como uma
+    frase) e o texto livre (`--contexto`), que vai como foi escrito.
     """
-    partes = []
-    presentes = ", ".join(dict.fromkeys(faixas.nomes_informados(config.faixas)))
-    if presentes:
-        partes.append(f"Participantes: {presentes}.")
-    if config.contexto.strip():
-        partes.append(config.contexto.strip())
-    return " ".join(partes)
+    rotulos = ROTULOS_CONTEXTO.get((config.idioma or "").lower())
+
+    def frase(indice: int, itens: Sequence[str]) -> str:
+        lista = ", ".join(dict.fromkeys(i.strip() for i in itens if i.strip()))
+        if not lista:
+            return ""
+        return f"{rotulos[indice]}: {lista}." if rotulos else f"{lista}."
+
+    partes = [
+        frase(0, faixas.nomes_informados(config.faixas)),
+        frase(1, config.termos),
+        config.contexto.strip(),
+    ]
+    return " ".join(p for p in partes if p)
 
 
 def _pesos(

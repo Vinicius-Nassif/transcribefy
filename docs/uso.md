@@ -493,7 +493,18 @@ preferir essas palavras quando o áudio é ambíguo.
   --contexto "Campanha de Ravenloft. Strahd von Zarovich, Barovia, Ireena Kolyana, Vallaki. Termos: iniciativa, teste de resistência, ponto de inspiração."
 ```
 
-Na interface web é o campo **Contexto da mesa**.
+Na interface web é o campo **Contexto da mesa**, uma lista: cada termo é um item, e
+um item pode ser uma frase inteira ("Campanha de Ravenloft, em Barovia"). O modelo
+recebe a lista como uma frase — `Termos da sessão: Strahd, Barovia, teste de
+resistência.` —, logo depois dos participantes. Os rótulos ("Participantes",
+"Termos da sessão") seguem o **idioma do áudio** (português, inglês, espanhol,
+francês, alemão e italiano): um rótulo em português puxaria a transcrição de um
+áudio em inglês para o lado errado. Com o idioma em `auto`, ou outro fora dessa
+lista, as listas vão sem rótulo, só com os nomes. Cada termo enviado fica
+guardado em `dados/historico-contexto.json`, no computador onde o servidor roda, e
+volta como sugestão nas próximas sessões — do mais usado recentemente para o mais
+antigo. Uma sugestão pode ser excluída na própria página; o arquivo também pode ser
+editado ou apagado à mão. A linha de comando não lê nem grava esse histórico.
 
 Os nomes do GM e dos jogadores entram sozinhos, sem precisar repeti-los: o
 `--nome-gm` e o `--nomes` já são incluídos antes do seu texto.

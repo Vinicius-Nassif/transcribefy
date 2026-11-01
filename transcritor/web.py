@@ -16,10 +16,11 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import copias, ffmpeg_tools, modelos, pipeline, progresso, saida, traducao
+from . import copias, ffmpeg_tools, historico, modelos, pipeline, progresso, saida, traducao
 from . import faixas as arranjo  # `faixas` é o nome do campo do formulário
 
 RAIZ_TRABALHOS = copias.RAIZ_PADRAO
+ARQUIVO_HISTORICO = historico.ARQUIVO_PADRAO
 PAGINA = Path(__file__).parent / "web_static" / "index.html"
 
 # Uma transcrição por vez: o modelo de fala já satura a GPU (ou os núcleos).
@@ -155,6 +156,7 @@ async def criar_trabalho(
     idioma: str = Form("pt"),
     traduzir: str = Form(""),
     contexto: str = Form(""),
+    termos: str = Form(""),
     deslocamento: float = Form(0.0),
     inicio: float = Form(0.0),
     fim: str = Form(""),
@@ -166,12 +168,16 @@ async def criar_trabalho(
     valem os campos do arranjo de duas faixas (`faixa_gm`, `faixa_grupo`,
     `nome_gm`, `jogadores`, `nomes`, `deslocamento`), com o comportamento de
     antes. A resposta traz em `avisos` os nomes repetidos entre faixas.
+
+    `termos` é a lista do contexto da mesa, um por linha: vai ao Whisper como
+    uma frase e fica no histórico de sugestões. `contexto` é texto livre, como
+    o `--contexto` da CLI, e vai como foi escrito.
     """
     parametros = {
         "modelo": modelo, "faixas": faixas, "faixa_gm": faixa_gm, "faixa_grupo": faixa_grupo,
         "nome_gm": nome_gm, "jogadores": jogadores, "nomes": nomes,
         "formatos": formatos, "idioma": idioma, "traduzir": traduzir,
-        "contexto": contexto, "deslocamento": deslocamento, "inicio": inicio,
+        "contexto": contexto, "termos": termos, "deslocamento": deslocamento, "inicio": inicio,
         "fim": fim, "juntar": juntar,
     }
     identificador = uuid.uuid4().hex[:12]
@@ -196,6 +202,7 @@ async def criar_trabalho(
     copias.registrar(pasta, nome, parametros)
 
     avisos = arranjo.nomes_repetidos(config.faixas)
+    avisos.extend(_registrar_historico(parametros["termos"]))
     trabalho = Trabalho(id=identificador, nome_video=nome, pasta=pasta, avisos=list(avisos))
     with _trava:
         _trabalhos[identificador] = trabalho
@@ -226,6 +233,7 @@ def _configuracao(parametros: dict, video: Path, pasta: Path) -> pipeline.Config
         idioma=p["idioma"],
         traducoes=traducao.validar_destinos(p["traduzir"].split(",")),
         contexto=p["contexto"],
+        termos=historico.termos_do_contexto(p.get("termos", "")),
         inicio=float(p["inicio"]),
         fim=float(fim) if fim else None,
         juntar_falas=bool(p["juntar"]),
@@ -244,6 +252,29 @@ def _faixas_do_formulario(p: dict) -> list[arranjo.Faixa]:
         nomes_jogadores=p["nomes"].split(","),
         deslocamento_grupo=float(p["deslocamento"]),
     )
+
+
+def _registrar_historico(termos: str) -> list[str]:
+    """Guarda os termos para sugerir depois. Uma falha aqui vira aviso, nunca erro."""
+    try:
+        historico.registrar(historico.termos_do_contexto(termos), ARQUIVO_HISTORICO)
+    except OSError as erro:
+        return [f"Os termos do contexto não puderam ser guardados para a próxima vez: {erro}"]
+    return []
+
+
+@app.get("/api/historico/contexto")
+def historico_contexto() -> dict:
+    """Termos de contexto já usados, do mais recente para o mais antigo."""
+    return {"termos": historico.listar(ARQUIVO_HISTORICO)}
+
+
+@app.delete("/api/historico/contexto")
+def remover_do_historico(termo: str) -> dict:
+    """Tira um termo das sugestões. Devolve a lista atualizada."""
+    if not historico.remover(termo, ARQUIVO_HISTORICO):
+        raise HTTPException(status_code=404, detail=f"'{termo}' não está no histórico")
+    return {"termos": historico.listar(ARQUIVO_HISTORICO)}
 
 
 @app.post("/api/trabalhos/{identificador}/tentar-novamente")
