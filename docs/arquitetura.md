@@ -423,7 +423,11 @@ O `conftest.py` redireciona `web.RAIZ_TRABALHOS` e `web.ARQUIVO_HISTORICO` para
 uma pasta temporária em **todos** os testes: nenhum deles escreve na pasta `dados/`
 real do projeto, nem por descuido.
 
-O `test_web.py` merece destaque: ele lê o HTML da interface e confere que todo campo
-enviado pelo formulário existe como parâmetro do endpoint, e que toda propriedade
-lida pelo JavaScript existe no payload da API. É o teste que pega quebras de
+O `test_web.py` merece destaque: ele lê o HTML da interface e confere os contratos
+com a API sem precisar de navegador — toda chamada da página aponta para uma rota
+que existe, todo campo enviado é aceito por `web._formulario`, cada faixa é montada
+com as chaves que `faixas.ler_json` lê, e toda propriedade lida pelo JavaScript
+existe no payload da API. Também trava duas regras da página: nada vindo do
+servidor é inserido como HTML (`innerHTML` não aparece no script), e todo campo
+tem o botão de ajuda. É o teste que pega quebras de
 contrato entre as duas metades da aplicação web, que nenhum dos outros veria.

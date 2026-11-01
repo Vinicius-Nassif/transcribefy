@@ -187,6 +187,15 @@ def test_nome_em_tres_faixas_cita_todas():
     lista = [Faixa(0, UMA, "Ana"), faixas.varias(1, ["Ana"]), Faixa(3, UMA, "ANA")]
     (aviso,) = faixas.nomes_repetidos(lista)
     assert "faixas 1, 2 e 4" in aviso
+    assert "as falas das 3 faixas vão aparecer com o mesmo nome" in aviso
+
+
+def test_o_aviso_diz_de_forma_direta_o_que_acontece():
+    (aviso,) = faixas.nomes_repetidos([Faixa(0, UMA, "Vini"), faixas.varias(1, ["Vini"])])
+    assert aviso == (
+        'O nome "Vini" aparece nas faixas 1 e 2: as falas das duas faixas vão '
+        "aparecer com o mesmo nome."
+    )
 
 
 def test_nomes_padrao_de_uma_pessoa_tambem_contam():

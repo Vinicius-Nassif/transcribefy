@@ -272,14 +272,15 @@ def repeticoes(faixas: Sequence[Faixa]) -> list[tuple[str, list[int]]]:
 def nomes_repetidos(faixas: Sequence[Faixa]) -> list[str]:
     """Avisos para nomes que aparecem em mais de uma faixa.
 
-    Não é erro — pode ser de propósito —, mas nas transcrições as falas das
-    faixas vão parecer da mesma pessoa.
+    Não é erro — pode ser de propósito —, mas nas transcrições as falas
+    dessas faixas saem com o mesmo nome.
     """
     avisos = []
     for nome, numeros in repeticoes(faixas):
         lista = ", ".join(str(n) for n in numeros[:-1]) + f" e {numeros[-1]}"
+        quais = "das duas faixas" if len(numeros) == 2 else f"das {len(numeros)} faixas"
         avisos.append(
-            f"O nome \"{nome}\" aparece nas faixas {lista}: nas transcrições, as "
-            "falas delas vão parecer da mesma pessoa."
+            f"O nome \"{nome}\" aparece nas faixas {lista}: as falas {quais} "
+            "vão aparecer com o mesmo nome."
         )
     return avisos

@@ -47,6 +47,88 @@ def test_a_pagina_envia_todos_os_campos_do_formulario():
     assert enviados <= aceitos, enviados - aceitos
 
 
+SCRIPT = PAGINA[PAGINA.index("<script>"): PAGINA.index("</script>")]
+
+
+def rotas_da_api() -> list[re.Pattern]:
+    """Cada rota do FastAPI vira uma expressão: `{id}` casa com `${...}` do JavaScript."""
+    padroes = []
+    for rota in web.app.routes:
+        caminho = getattr(rota, "path", "")
+        if caminho.startswith("/api/"):
+            corpo = re.sub(r"\\{[^}]+\\}", r"\\$\\{[^}]+\\}", re.escape(caminho))
+            padroes.append(re.compile(corpo + "$"))
+    return padroes
+
+
+def test_toda_chamada_da_pagina_aponta_para_uma_rota_que_existe():
+    chamadas = re.findall(r"""(?:fetch\(|open\("POST",\s*)[`"](/api/[^`"?]*)""", SCRIPT)
+    assert len(chamadas) >= 8
+    padroes = rotas_da_api()
+    sem_rota = [c for c in chamadas if not any(p.match(c) for p in padroes)]
+    assert sem_rota == []
+
+
+def test_a_pagina_so_envia_campos_que_a_api_aceita():
+    import inspect
+
+    enviados = set(re.findall(r'\b(?:dados|corpo)\.set\("([a-z_]+)"', SCRIPT))
+    assert {"faixas", "termos", "traduzir", "video", "inicio", "fim"} <= enviados
+    aceitos = set(inspect.signature(web._formulario).parameters) | {"video"}
+    assert enviados <= aceitos, enviados - aceitos
+
+
+def test_cada_faixa_e_montada_com_as_chaves_que_o_servidor_le():
+    """O objeto de `faixaParaApi` precisa bater com o que `faixas.ler_json` procura."""
+    import inspect
+
+    from transcritor import faixas
+
+    corpo = SCRIPT[SCRIPT.index("function faixaParaApi"):]
+    corpo = corpo[: corpo.index("\n}\n")]
+    enviadas = set(re.findall(r"^\s+(\w+):", corpo, re.MULTILINE))
+    lidas = set(re.findall(r'item\.get\("(\w+)"', inspect.getsource(faixas.ler_json)))
+    assert enviadas == lidas
+
+
+def test_nada_vindo_do_servidor_vira_html():
+    """Nomes, falas e mensagens entram por textContent; innerHTML abriria brecha."""
+    assert "innerHTML" not in SCRIPT
+    assert "insertAdjacentHTML" not in SCRIPT
+
+
+def test_todo_campo_estatico_tem_ajuda():
+    """Cada `<label for=...>` vem acompanhado do botão "i" com o balão de ajuda."""
+    for achado in re.finditer(r'<label for="([\w-]+)"', PAGINA):
+        trecho = PAGINA[achado.end(): achado.end() + 300]
+        assert 'class="info"' in trecho, achado.group(1)
+
+
+def test_todo_campo_das_faixas_tem_ajuda():
+    rotulos = re.findall(r'el\("label", \{ for:.*? \}\),\s*(\w+)\(', SCRIPT)
+    assert len(rotulos) == SCRIPT.count('el("label", { for:') == 3  # nome, pessoas, deslocamento
+    assert set(rotulos) == {"dica"}
+
+
+def test_o_recorte_comeca_desligado():
+    """Desligado, os campos ficam desabilitados e não são enviados."""
+    assert re.search(r'id="recorte-ativo"(?![^>]*checked)', PAGINA)
+    for campo in ("inicio", "fim"):
+        assert re.search(rf'<input id="{campo}"[^>]*disabled', PAGINA), campo
+    assert 'if ($("recorte-ativo").checked)' in SCRIPT
+
+
+def test_a_janela_de_nome_repetido_tem_continuar_e_revisar():
+    dialogo = PAGINA[PAGINA.index('<dialog id="dialogo-repetidos"'): PAGINA.index("</dialog>")]
+    assert 'id="continuar"' in dialogo and 'id="revisar"' in dialogo
+    assert "/api/faixas/verificar" in SCRIPT
+
+
+def test_a_pagina_comeca_com_o_arranjo_de_duas_faixas():
+    assert 'adicionarFaixa({ numero: 1, tipo: "uma", nome: "GM" })' in SCRIPT
+    assert 'adicionarFaixa({ numero: 2, tipo: "varias", pessoas: "5" })' in SCRIPT
+
+
 def test_o_script_de_inicio_do_windows_confere_um_campo_que_a_api_devolve():
     """O script só abre o navegador quando reconhece este campo na resposta.
 
@@ -60,3 +142,16 @@ def test_o_script_de_inicio_do_windows_confere_um_campo_que_a_api_devolve():
     procurados = set(re.findall(r"""Content -match '"(\w+)"'""", script))
     assert procurados, "o script não confere campo nenhum da resposta"
     assert procurados <= set(web.listar_modelos())
+
+
+def test_a_busca_sem_acento_usa_o_escape_e_nao_caracteres_invisiveis():
+    """Os acentos são removidos por uma regex com o intervalo dos diacríticos escrito com escape.
+
+    Os mesmos caracteres colados literalmente funcionam, mas são invisíveis no
+    editor e se perdem numa cópia; uma revisão não teria como notá-los.
+    """
+    import unicodedata
+
+    barra = "\\"
+    assert "replace(/[" + barra + "u0300-" + barra + "u036f]/g" in SCRIPT
+    assert not any(unicodedata.combining(c) for c in PAGINA)

@@ -317,6 +317,30 @@ estiver ativo; `Ctrl+C` encerra. Para trocar a porta: `--porta 8080`.
 > quanto pelo IP da máquina virtual, o que evita o caso em que o encaminhamento de
 > localhost do WSL não funciona. `hostname -I` mostra o IP da VM.
 
+A página é dividida em cinco passos, cada campo com um **i** que explica o que é e
+como preencher (passe o mouse, use o Tab ou toque nele):
+
+1. **Gravação** — o arquivo do OBS: arraste para a área tracejada ou escolha pelo botão.
+2. **Quem fala em cada faixa** — um quadro por faixa do arquivo, começando com o
+   arranjo de sempre (GM na faixa 1, jogadores na faixa 2). Em cada um: o número da
+   faixa, se é de *uma pessoa* (com o nome) ou de *várias* (quantas, e os nomes,
+   opcionais), e o ajuste de sincronia. Um nome repetido em duas faixas fica
+   destacado enquanto você digita, e ao enviar a página pede confirmação —
+   *Continuar* ou *Revisar*.
+3. **Reconhecimento** — modelo, idioma do áudio e o contexto da mesa, como lista,
+   com os termos já usados oferecidos como sugestão.
+4. **Tradução** — os idiomas de destino, quantos quiser, com busca (sem acento:
+   "ingles" encontra "Inglês").
+5. **Transcrever só um trecho** — ligue para informar início e fim; desligado, a
+   gravação inteira é transcrita.
+
+Durante a transcrição, a barra mostra a porcentagem, a etapa ("Transcrevendo a
+faixa 2 (várias pessoas), 2 de 3") e o tempo restante, que aparece como
+"calculando..." até haver ritmo medido. Se o arquivo não tiver uma das faixas
+pedidas, ou se a transcrição falhar, a cópia do arquivo fica no servidor: dá para
+**tentar de novo** ou ajustar a configuração e **reenviar só ela**, sem subir o
+arquivo outra vez.
+
 ### Linha de comando
 
 ```bash
@@ -570,8 +594,8 @@ Com **duas ou mais** faixas de várias pessoas, o padrão leva a faixa junto —
 `Faixa 2 · Pessoa 1`, `Faixa 4 · Pessoa 1` — para que as vozes de faixas
 diferentes não saiam com o mesmo nome.
 
-O mesmo nome em duas faixas é permitido, mas gera um aviso antes de começar: nas
-transcrições, as falas das duas vão parecer da mesma pessoa.
+O mesmo nome em duas faixas é permitido, mas gera um aviso antes de começar: as
+falas das duas faixas vão aparecer com o mesmo nome.
 
 `--faixa` não se mistura com `--faixa-gm`, `--faixa-grupo`, `--nome-gm`, `-n`,
 `--nomes` nem com `--deslocamento` de número sozinho: misturar é erro, para que
@@ -812,9 +836,13 @@ página fica em `http://<ip>:8000`. Esse IP muda a cada reinício do WSL.
 
 ### Só uma trilha de áudio
 
-> `O vídeo tem 1 faixa(s) de áudio; são necessárias 2.`
+> `A faixa 2 não existe: o arquivo tem 1 faixa(s) de áudio.`
 
-A gravação saiu com tudo misturado, e não há como separar as vozes depois. O ajuste
+Se a trilha única tem uma pessoa só, ou se é aceitável tratar todo mundo como
+"várias pessoas", basta pedir só ela: `--faixa 1=varias` na linha de comando, ou um
+único quadro de faixa na página. Mas, se o GM e o Discord caíram na mesma trilha, a
+gravação saiu com tudo misturado: a separação por voz vai ter que distinguir o GM
+dos jogadores também, e erra bem mais. O ajuste
 é no OBS, antes de gravar: em **Configurações → Saída → Gravação**, marque as
 trilhas 1 e 2. Depois, no mixer, use **Propriedades avançadas de áudio** para mandar
 o microfone do GM só para a trilha 1 e o Discord só para a trilha 2.
@@ -891,3 +919,13 @@ não interromper uma sessão de três horas pela metade.
 É o download do modelo, que acontece uma única vez. Para tirar essa espera do
 caminho, baixe antes com `transcritor modelos --baixar preciso`. O
 `transcritor modelos` marca com `*` o que já está em cache.
+
+### Avisos do Vosk no terminal
+
+> `WARNING (VoskAPI:Check():nnet-nnet.cc:789) Node tdnn6.relu is never used to compute any output.`
+
+São inofensivos: aparecem ao carregar o modelo de locutor, que separa as vozes, e
+dizem só que algumas camadas da rede não são usadas para o que o projeto pede a
+ela — os vetores de voz. A separação funciona igual. Eles vêm do Kaldi, por baixo
+do Vosk, e não respeitam o nível de log que o Vosk permite ajustar, por isso
+continuam aparecendo.
