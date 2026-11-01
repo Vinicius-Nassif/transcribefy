@@ -141,9 +141,35 @@ def test_a_linha_da_cli_tem_largura_fixa():
     assert "calculando..." in curta
 
 
-def test_mensagem_longa_e_cortada_no_meio_preservando_a_posicao():
+def test_mensagem_longa_perde_primeiro_a_parte_descritiva():
     linha = cli._linha_de_progresso(
         "Analisando as vozes da faixa 2 (várias pessoas), 2 de 3", 0.6, 30
     )
-    assert linha.rstrip().endswith("2 de 3")
-    assert "…" in linha
+    assert linha.rstrip().endswith("Analisando as vozes da faixa 2, 2 de 3")
+    assert "…" not in linha
+
+
+def test_mensagem_que_cabe_fica_inteira():
+    assert cli._encurtar("Transcrevendo a faixa 3 (Caio), 2 de 3") == (
+        "Transcrevendo a faixa 3 (Caio), 2 de 3"
+    )
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        "Analisando as vozes da faixa 12 (várias pessoas), 11 de 12",
+        "Transcrevendo a faixa 2 (Maria Eduarda de Albuquerque Figueiredo), 2 de 10",
+        "Transcrevendo a faixa com uma descrição enorme que não tem parênteses, 3 de 4",
+        "Etapa sem posição com um texto comprido demais para caber na linha toda",
+    ],
+)
+def test_nunca_corta_no_meio_de_palavra_nem_perde_a_posicao(mensagem):
+    curta = cli._encurtar(mensagem)
+    assert len(curta) <= cli._LARGURA_MENSAGEM
+    posicao = cli._POSICAO.search(mensagem)
+    if posicao:
+        assert curta.endswith(posicao.group(0).lstrip(", "))
+    palavras = set(mensagem.replace(",", " ").replace("(", " ").replace(")", " ").split())
+    for pedaco in curta.replace("…", " ").replace(",", " ").split():
+        assert pedaco in palavras, pedaco  # nenhuma palavra pela metade

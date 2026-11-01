@@ -207,9 +207,10 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
                     fala.locutor = faixa.nome_unico
             falas_por_faixa.append((faixa, falas))
 
-    for faixa, falas in falas_por_faixa:
+    for posicao, (faixa, falas) in enumerate(falas_por_faixa, start=1):
         if faixa.tipo == faixas.VARIAS:
-            aviso(f"Separando os locutores da {faixa.rotulo} pela voz", concluido)
+            descricao = _descricao(faixa, posicao, len(falas_por_faixa))
+            aviso(f"Separando os locutores da {descricao}", concluido)
             diarizacao.atribuir_locutores(
                 falas,
                 n_locutores=faixa.n_locutores,

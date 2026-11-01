@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -375,15 +376,39 @@ def _cmd_transcrever(args) -> int:
     return 0
 
 
+_LARGURA_MENSAGEM = 52
+_POSICAO = re.compile(r",?\s*\d+ de \d+$")
+_DESCRICAO = re.compile(r"\s*\([^)]*\)")
+
+
+def _encurtar(mensagem: str, limite: int = _LARGURA_MENSAGEM) -> str:
+    """Encaixa a etapa no espaço da linha sem perder o "N de M" do final.
+
+    Primeiro saem as partes descritivas entre parênteses — "(várias pessoas)",
+    "(Caio)" —, que o resto da mensagem dispensa. Só se ainda faltar espaço o
+    começo é cortado, numa fronteira de palavra, com reticências.
+    """
+    if len(mensagem) <= limite:
+        return mensagem
+    curta = _DESCRICAO.sub("", mensagem)
+    if len(curta) <= limite:
+        return curta
+    achado = _POSICAO.search(curta)
+    posicao = achado.group(0) if achado else ""
+    corpo = curta[: achado.start()] if achado else curta
+    espaco = limite - len(posicao) - 1
+    corte = corpo[:espaco].rsplit(" ", 1)[0] if " " in corpo[:espaco] else corpo[:espaco]
+    return f"{corte.rstrip(' ,')}…{posicao}"
+
+
 def _linha_de_progresso(mensagem: str, fracao: float, restante: float | None) -> str:
     """Uma linha de largura fixa, reescrita no lugar a cada aviso (`\\r`)."""
     largura = 24
     cheio = int(fracao * largura)
     barra = "#" * cheio + "-" * (largura - cheio)
     tempo = "" if fracao >= 1.0 else progresso.texto_restante(restante)
-    if len(mensagem) > 52:  # corta no meio: o fim ("2 de 3") é o que mais informa
-        mensagem = f"{mensagem[:30]}…{mensagem[-21:]}"
-    return f"[{barra}] {fracao * 100:5.1f}%  {tempo:<18} {mensagem:<52}"
+    mensagem = _encurtar(mensagem)
+    return f"[{barra}] {fracao * 100:5.1f}%  {tempo:<18} {mensagem:<{_LARGURA_MENSAGEM}}"
 
 
 def _saida_em_utf8() -> None:

@@ -230,6 +230,7 @@ def test_a_mensagem_diz_qual_faixa_e_a_posicao_na_fila(falso):
     assert "Transcrevendo a faixa 2 (várias pessoas), 2 de 3" in mensagens
     assert "Analisando as vozes da faixa 2 (várias pessoas), 2 de 3" in mensagens
     assert "Transcrevendo a faixa 3 (Caio), 3 de 3" in mensagens
+    assert "Separando os locutores da faixa 2 (várias pessoas), 2 de 3" in mensagens
 
 
 def test_o_dispositivo_em_uso_define_os_pesos(falso, monkeypatch):
