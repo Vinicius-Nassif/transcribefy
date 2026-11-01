@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import copias, faixas, ffmpeg_tools, modelos, pipeline, saida
+from . import copias, faixas, ffmpeg_tools, modelos, pipeline, progresso, saida
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -352,16 +352,16 @@ def _cmd_transcrever(args) -> int:
     )
 
     ultimo = [0.0]
+    estimativa = progresso.EstimativaTempo()
 
     def relatar(mensagem: str, fracao: float) -> None:
+        estimativa.registrar(fracao)
         agora = time.monotonic()
         if fracao < 1.0 and agora - ultimo[0] < 0.5:
             return
         ultimo[0] = agora
-        largura = 30
-        cheio = int(fracao * largura)
-        barra = "#" * cheio + "-" * (largura - cheio)
-        print(f"\r[{barra}] {fracao * 100:5.1f}%  {mensagem[:45]:<45}", end="", flush=True)
+        print(f"\r{_linha_de_progresso(mensagem, fracao, estimativa.restante())}",
+              end="", flush=True)
 
     resultado = pipeline.executar(config, relatar)
     print()
@@ -373,6 +373,17 @@ def _cmd_transcrever(args) -> int:
     for arquivo in resultado.arquivos:
         print(f"  {arquivo}")
     return 0
+
+
+def _linha_de_progresso(mensagem: str, fracao: float, restante: float | None) -> str:
+    """Uma linha de largura fixa, reescrita no lugar a cada aviso (`\\r`)."""
+    largura = 24
+    cheio = int(fracao * largura)
+    barra = "#" * cheio + "-" * (largura - cheio)
+    tempo = "" if fracao >= 1.0 else progresso.texto_restante(restante)
+    if len(mensagem) > 52:  # corta no meio: o fim ("2 de 3") é o que mais informa
+        mensagem = f"{mensagem[:30]}…{mensagem[-21:]}"
+    return f"[{barra}] {fracao * 100:5.1f}%  {tempo:<18} {mensagem:<52}"
 
 
 def _saida_em_utf8() -> None:

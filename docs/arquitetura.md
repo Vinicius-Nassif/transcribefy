@@ -64,6 +64,7 @@ flowchart TD
 | `mesclagem.py` | Intercala as faixas numa linha do tempo só e aponta as simultâneas | `fala` |
 | `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
 | `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
+| `progresso.py` | Custo de cada etapa por dispositivo e estimativa do tempo restante | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
 | `cli.py` / `web.py` | As duas interfaces | `pipeline`, `faixas`, `ffmpeg_tools`, `modelos`, `saida`, `copias` |
 
@@ -104,6 +105,26 @@ A API aceita os campos antigos (`faixa_gm`, `faixa_grupo`, `nome_gm`, `jogadores
 `nomes`, `deslocamento`) quando o campo `faixas` não vem. Não é só cortesia: os
 `trabalho.json` de envios que falharam guardaram esses campos, e a nova tentativa
 precisa reconstruir a configuração a partir deles.
+
+### Progresso e tempo restante
+
+O `pipeline` relata `(mensagem, fração)`. A fração não conta etapas: cada etapa de
+cada faixa pesa o que ela costuma custar **no dispositivo em uso** —
+`progresso.custo_transcricao` (Whisper na GPU ou na CPU, ou Vosk) e
+`progresso.CUSTO_VOZES` —, com fatias fixas para a preparação, a extração e o
+fim. O dispositivo vem de `transcricao.dispositivo_efetivo`, a mesma decisão que o
+motor toma ao abrir o modelo. Assim a porcentagem anda no ritmo do relógio, e a
+mensagem diz a etapa: "Transcrevendo a faixa 3 (Caio), 2 de 3".
+
+O tempo restante é calculado por quem mostra o progresso, com
+`progresso.EstimativaTempo`: o ritmo dos últimos 90 s, e `None` ("calculando...")
+antes de 10 s ou de 2% de avanço. Na web, o `Trabalho` guarda a estimativa e o
+estado devolvido à página já traz `restante`, `restante_texto` e `decorrido` — a
+página só exibe. A CLI usa a mesma classe e o mesmo `texto_restante`.
+
+As constantes de custo foram medidas numa RTX 4050 e num i7; só a proporção
+entre elas importa. Se a estimativa errar sistematicamente numa máquina, é ali
+que se ajusta.
 
 ### Os dois motores de reconhecimento
 
@@ -329,6 +350,7 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_cli.py` | Estilo novo, estilo antigo e a recusa de misturar os dois |
 | `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
 | `test_transcricao.py` | Validação do WAV e escolha do motor |
+| `test_progresso.py` | Quando há base para estimar, o texto do tempo restante, a API e a linha da CLI |
 | `test_web.py` | Contrato entre a API e o formulário da página |
 | `test_copias.py` | O que a limpeza pode e nunca pode apagar |
 | `test_web_temporario.py` | Cópia do envio: apagada no sucesso, guardada na falha, nova tentativa, limpeza; e a CLI que nunca apaga |

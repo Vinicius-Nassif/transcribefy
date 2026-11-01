@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import copias, ffmpeg_tools, modelos, pipeline, saida
+from . import copias, ffmpeg_tools, modelos, pipeline, progresso, saida
 from . import faixas as arranjo  # `faixas` é o nome do campo do formulário
 
 RAIZ_TRABALHOS = copias.RAIZ_PADRAO
@@ -42,14 +42,33 @@ class Trabalho:
     avisos: list[str] = field(default_factory=list)
     previa: list[dict] = field(default_factory=list)
     pasta: Path | None = field(default=None, repr=False)
+    estimativa: progresso.EstimativaTempo | None = field(default=None, repr=False)
+
+    def tempo_restante(self) -> float | None:
+        """Segundos até o fim, calculados aqui; None enquanto não há base."""
+        if self.estado == "concluido":
+            return 0.0
+        if self.estado != "processando" or self.estimativa is None:
+            return None
+        return self.estimativa.restante()
 
     def como_dict(self) -> dict:
+        restante = self.tempo_restante()
         return {
             "id": self.id,
             "nome_video": self.nome_video,
             "estado": self.estado,
             "mensagem": self.mensagem,
             "progresso": round(self.progresso, 4),
+            # A página só exibe: o cálculo e o texto saem prontos daqui.
+            "restante": None if restante is None else round(restante),
+            "restante_texto": (
+                progresso.texto_restante(restante)
+                if self.estado == "processando" else ""
+            ),
+            "decorrido": (
+                round(self.estimativa.decorrido) if self.estimativa is not None else 0
+            ),
             "erro": self.erro,
             "arquivos": self.arquivos,
             "locutores": self.locutores,
@@ -265,7 +284,10 @@ def tentar_novamente(identificador: str) -> JSONResponse:
 
 
 def _processar(trabalho: Trabalho, config: pipeline.Configuracao) -> None:
+    trabalho.estimativa = progresso.EstimativaTempo()
+
     def relatar(mensagem: str, fracao: float) -> None:
+        trabalho.estimativa.registrar(fracao)
         trabalho.estado = "processando"
         trabalho.mensagem = mensagem
         trabalho.progresso = fracao

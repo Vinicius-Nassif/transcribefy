@@ -21,6 +21,7 @@ __all__ = [
     "SAMPLE_RATE",
     "Fala",
     "aviso_de_dispositivo",
+    "dispositivo_efetivo",
     "preparar_wav",
     "transcrever",
     "wav_valido",
@@ -71,6 +72,18 @@ def aviso_de_dispositivo(modelo: ModeloPronto, preferencia: str = "auto") -> str
     if diagnostico.gpus < 1 or diagnostico.utilizavel:
         return ""
     return f"Transcrevendo em CPU, bem mais devagar. {diagnostico.explicacao}"
+
+
+def dispositivo_efetivo(modelo: ModeloPronto, preferencia: str = "auto") -> str:
+    """Onde a transcrição vai de fato rodar: "cuda" ou "cpu".
+
+    O Vosk é sempre CPU. Para o Whisper, é a mesma decisão que o motor vai tomar
+    ao abrir o modelo; quem pediu "cuda" sem GPU utilizável recebe o erro aqui,
+    antes de começar.
+    """
+    if modelo.motor != modelos.MOTOR_WHISPER:
+        return "cpu"
+    return motor_whisper.escolher_dispositivo(preferencia)[0]
 
 
 def transcrever(

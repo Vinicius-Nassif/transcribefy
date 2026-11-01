@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from transcritor import faixas, ffmpeg_tools, modelos, pipeline, transcricao, vozes
+from transcritor import faixas, ffmpeg_tools, modelos, pipeline, progresso, transcricao, vozes
 from transcritor.fala import Fala
 from transcritor.faixas import UMA, Faixa
 
@@ -87,6 +87,7 @@ def falso(tmp_path, monkeypatch):
     monkeypatch.setattr(modelos, "resolver_modelo_locutor", resolver_locutor)
     monkeypatch.setattr(transcricao, "transcrever", transcrever)
     monkeypatch.setattr(transcricao, "aviso_de_dispositivo", lambda *_a: "")
+    monkeypatch.setattr(transcricao, "dispositivo_efetivo", lambda *_a: "cuda")
     monkeypatch.setattr(vozes, "anexar_vetores", anexar_vetores)
 
     def executar(lista, **extra):
@@ -199,10 +200,52 @@ def test_o_progresso_so_avanca_e_termina_em_um(falso):
     assert fracoes[-1] == 1.0
 
 
-def test_os_pesos_de_duas_faixas_sao_os_de_antes():
-    pesos = pipeline._pesos(faixas.padrao())
-    assert pesos[0] == pytest.approx((0.24, 0.0), abs=0.005)
-    assert pesos[1] == pytest.approx((0.48, 0.19), abs=0.005)
+def test_os_pesos_seguem_o_custo_de_cada_etapa():
+    """Transcrever pesa igual nas duas faixas; os vetores de voz, bem menos."""
+    custo = progresso.custo_transcricao("whisper", "cuda")
+    pesos = pipeline._pesos(faixas.padrao(), custo)
+    texto_gm, vozes_gm = pesos[0]
+    texto_grupo, vozes_grupo = pesos[1]
+    assert vozes_gm == 0.0
+    assert texto_gm == pytest.approx(texto_grupo)
+    assert vozes_grupo == pytest.approx(texto_grupo * progresso.CUSTO_VOZES / custo)
+    total = sum(a + b for a, b in pesos.values())
+    assert total == pytest.approx(1 - pipeline._PREPARO - pipeline._EXTRACAO - pipeline._FINAL)
+
+
+def test_na_cpu_os_vetores_de_voz_pesam_proporcionalmente_menos():
+    """A transcrição fica mais lenta na CPU; os vetores, não. A barra precisa saber."""
+    def fatia_vozes(dispositivo):
+        pesos = pipeline._pesos(faixas.padrao(), progresso.custo_transcricao("whisper", dispositivo))
+        return pesos[1][1]
+
+    assert fatia_vozes("cpu") < fatia_vozes("cuda") / 4
+
+
+def test_a_mensagem_diz_qual_faixa_e_a_posicao_na_fila(falso):
+    registro, executar = falso
+    executar([Faixa(0, UMA, "GM"), faixas.varias(1, n_locutores=2), Faixa(2, UMA, "Caio")])
+    mensagens = [m for m, _ in registro.mensagens]
+    assert "Transcrevendo a faixa 1 (GM), 1 de 3" in mensagens
+    assert "Transcrevendo a faixa 2 (várias pessoas), 2 de 3" in mensagens
+    assert "Analisando as vozes da faixa 2 (várias pessoas), 2 de 3" in mensagens
+    assert "Transcrevendo a faixa 3 (Caio), 3 de 3" in mensagens
+
+
+def test_o_dispositivo_em_uso_define_os_pesos(falso, monkeypatch):
+    """Na CPU, a transcrição ocupa uma fatia maior da barra que na GPU."""
+    registro, executar = falso
+
+    def fatia_da_primeira_transcricao():
+        registro.mensagens.clear()
+        executar(faixas.padrao(n_jogadores=2))
+        fracoes = [f for m, f in registro.mensagens if m.startswith("Transcrevendo a faixa 2")]
+        return fracoes[0] - pipeline._PREPARO - pipeline._EXTRACAO
+
+    na_gpu = fatia_da_primeira_transcricao()
+    monkeypatch.setattr(transcricao, "dispositivo_efetivo", lambda *_a: "cpu")
+    na_cpu = fatia_da_primeira_transcricao()
+    assert na_cpu > na_gpu
 
 
 def test_faixa_pedida_que_o_arquivo_nao_tem(falso):

@@ -323,6 +323,15 @@ estiver ativo; `Ctrl+C` encerra. Para trocar a porta: `--porta 8080`.
 .venv/bin/transcritor transcrever gravacao.mp4 -o saida/sessao-01
 ```
 
+Enquanto roda, uma linha mostra a porcentagem, o tempo restante e a etapa:
+
+```
+[################--------]  67.4%  faltam ~10 min     Analisando as vozes da faixa 2…rias pessoas), 2 de 3
+```
+
+O tempo restante aparece como `calculando...` nos primeiros segundos e enquanto um
+modelo é baixado: até lá, não há ritmo medido em que se basear.
+
 > **Para a gravação completa, prefira a linha de comando.** A interface web copia o
 > arquivo inteiro para `dados/trabalhos/` durante o envio. Numa sessão de três
 > horas, isso significa vários GB duplicados em disco e um upload demorado pelo

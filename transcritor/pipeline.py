@@ -7,20 +7,28 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import diarizacao, faixas, ffmpeg_tools, mesclagem, modelos, saida, transcricao, vozes
+from . import (
+    diarizacao,
+    faixas,
+    ffmpeg_tools,
+    mesclagem,
+    modelos,
+    progresso,
+    saida,
+    transcricao,
+    vozes,
+)
 from .fala import Fala
 from .faixas import Faixa
 
 # Peso de cada etapa no progresso total. A preparação (conferir as faixas e os
 # modelos), a extração e o fim (diarização, mesclagem e escrita) têm fatia fixa;
-# o resto se divide entre as faixas em unidades: transcrever uma faixa de uma
-# pessoa vale 1, de várias pessoas vale 2 (mais vozes, mais fala), e extrair os
-# vetores de voz dela vale 0,8. Com o arranjo de duas faixas, dá os mesmos 24%,
-# 48% e 19% de antes.
+# o resto se divide entre as etapas de cada faixa pelo custo delas no dispositivo
+# em uso (`progresso`), para que a porcentagem ande no ritmo do relógio — é o
+# que torna confiável a estimativa do tempo restante.
 _PREPARO = 0.02
 _EXTRACAO = 0.02
 _FINAL = 0.05
-_UNIDADES = {"uma": 1.0, "varias": 2.0, "vozes": 0.8}
 
 Relato = Callable[[str, float], None]
 
@@ -74,12 +82,18 @@ def contexto_da_mesa(config: Configuracao) -> str:
     return " ".join(partes)
 
 
-def _pesos(lista: Sequence[Faixa]) -> dict[int, tuple[float, float]]:
-    """Fração do progresso de cada faixa: (transcrição, vetores de voz)."""
+def _pesos(
+    lista: Sequence[Faixa], custo_texto: float
+) -> dict[int, tuple[float, float]]:
+    """Fração do progresso de cada faixa: (transcrição, vetores de voz).
+
+    Todas as faixas têm a mesma duração (são do mesmo arquivo e do mesmo
+    recorte), então o custo por segundo de áudio basta para dividir o tempo.
+    """
     unidades = {
         f.numero: (
-            _UNIDADES[f.tipo],
-            _UNIDADES["vozes"] if f.tipo == faixas.VARIAS else 0.0,
+            custo_texto,
+            progresso.CUSTO_VOZES if f.tipo == faixas.VARIAS else 0.0,
         )
         for f in lista
     }
@@ -88,10 +102,10 @@ def _pesos(lista: Sequence[Faixa]) -> dict[int, tuple[float, float]]:
     return {n: (a / total * disponivel, b / total * disponivel) for n, (a, b) in unidades.items()}
 
 
-def _descricao(faixa: Faixa) -> str:
-    if faixa.tipo == faixas.UMA:
-        return f"{faixa.rotulo} ({faixa.nome_unico})"
-    return f"{faixa.rotulo} (várias pessoas)"
+def _descricao(faixa: Faixa, posicao: int, total: int) -> str:
+    """"faixa 3 (Caio), 2 de 3": o número no arquivo e a posição na fila."""
+    quem = faixa.nome_unico if faixa.tipo == faixas.UMA else "várias pessoas"
+    return f"{faixa.rotulo} ({quem}), {posicao} de {total}"
 
 
 def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
@@ -129,13 +143,14 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
         )
     contexto = contexto_da_mesa(config)
 
+    dispositivo = transcricao.dispositivo_efetivo(modelo, config.dispositivo)
     avisos: list[str] = []
     aviso_gpu = transcricao.aviso_de_dispositivo(modelo, config.dispositivo)
     if aviso_gpu:
         avisos.append(aviso_gpu)
         aviso(aviso_gpu, 0.02)
 
-    pesos = _pesos(escolhidas)
+    pesos = _pesos(escolhidas, progresso.custo_transcricao(modelo.motor, dispositivo))
     falas_por_faixa: list[tuple[Faixa, list[Fala]]] = []
     concluido = _PREPARO
     with tempfile.TemporaryDirectory(prefix="transcritor-") as tmp:
@@ -151,12 +166,13 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
         }
         concluido += _EXTRACAO
 
-        for faixa in escolhidas:
+        for posicao, faixa in enumerate(escolhidas, start=1):
             peso_texto, peso_vozes = pesos[faixa.numero]
             varias = faixa.tipo == faixas.VARIAS
+            descricao = _descricao(faixa, posicao, len(escolhidas))
 
             base = concluido
-            mensagem = f"Transcrevendo a {_descricao(faixa)}"
+            mensagem = f"Transcrevendo a {descricao}"
             aviso(mensagem, base)
             # O motor Vosk já devolve os vetores de voz na mesma passada; com o
             # Whisper eles vêm depois, trecho a trecho.
@@ -176,7 +192,7 @@ def executar(config: Configuracao, relatar: Relato | None = None) -> Resultado:
             if varias:
                 if not any(f.vetor_voz for f in falas):
                     base = concluido
-                    mensagem = f"Analisando as vozes da {faixa.rotulo}"
+                    mensagem = f"Analisando as vozes da {descricao}"
                     aviso(mensagem, base)
                     vozes.anexar_vetores(
                         wavs[faixa.numero], falas, modelo_vosk.caminho, caminho_locutor,
