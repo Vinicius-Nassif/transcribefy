@@ -7,16 +7,17 @@ import sys
 import time
 from pathlib import Path
 
-from . import copias, ffmpeg_tools, modelos, pipeline, saida
+from . import copias, faixas, ffmpeg_tools, modelos, pipeline, saida
 
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="transcritor",
         description=(
-            "Transcreve um MP4 do OBS com duas faixas de áudio (faixa 1: GM, "
-            "faixa 2: jogadores) e gera uma transcrição única com os locutores "
-            "separados pela voz."
+            "Transcreve uma gravação do OBS com várias faixas de áudio e gera uma "
+            "transcrição única, com cada fala atribuída a quem a disse. Cada faixa "
+            "é de uma pessoa (nome fixo) ou de várias (separadas pela voz). Sem "
+            "--faixa, vale o arranjo de sempre: faixa 1 do GM, faixa 2 dos jogadores."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -24,6 +25,8 @@ def _parser() -> argparse.ArgumentParser:
             "  transcritor faixas sessao.mp4\n"
             "  transcritor transcrever sessao.mp4 -o saida/sessao-01\n"
             "  transcritor transcrever sessao.mp4 --nomes Ana,Bruno,Caio,Duda,Edu\n"
+            "  transcritor transcrever sessao.mp4 --faixa 1=Mestre \\\n"
+            "      --faixa 2=varias:3:Ana,Bruno,Caio --faixa 3=Duda\n"
             "  transcritor transcrever sessao.mp4 --contexto 'Campanha de Ravenloft; Strahd; Barovia'\n"
             "  transcritor web --porta 8000\n"
             "  transcritor diagnostico\n"
@@ -32,8 +35,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="comando", required=True)
 
-    faixas = sub.add_parser("faixas", help="lista as faixas de áudio de um arquivo")
-    faixas.add_argument("video", type=Path)
+    listar_faixas = sub.add_parser("faixas", help="lista as faixas de áudio de um arquivo")
+    listar_faixas.add_argument("video", type=Path)
 
     lista = sub.add_parser("modelos", help="lista e baixa os modelos de fala")
     lista.add_argument(
@@ -81,17 +84,35 @@ def _parser() -> argparse.ArgumentParser:
         "-m", "--modelo", default=modelos.PADRAO,
         help=f"modelo de fala: {', '.join(modelos.MODELOS_FALA)} ou um caminho",
     )
-    t.add_argument("--faixa-gm", type=int, default=1, help="número da faixa do GM (1-based)")
     t.add_argument(
-        "--faixa-grupo", type=int, default=2, help="número da faixa dos jogadores (1-based)"
+        "--faixa", action="append", type=_tipo(faixas.ler_especificacao),
+        dest="faixas", metavar="ESPEC",
+        help=(
+            "uma faixa a transcrever; repita para cada uma. 'N=NOME' para uma "
+            "pessoa (ex.: 1=GM); 'N=varias[:QTD][:NOMES]' para várias, separadas "
+            "pela voz (ex.: 2=varias:5:Ana,Bruno). Sem QTD, usa o número de nomes, "
+            "ou estima se não houver nomes"
+        ),
     )
-    t.add_argument("--nome-gm", default="GM", help="como chamar o locutor da faixa 1")
-    t.add_argument(
-        "-n", "--jogadores", default="5",
-        help="quantos locutores há na faixa 2; use 'auto' para estimar",
+    antigas = t.add_argument_group(
+        "arranjo de duas faixas (estilo antigo, não combina com --faixa)"
     )
-    t.add_argument(
-        "--nomes", default="",
+    antigas.add_argument(
+        "--faixa-gm", type=int, default=None, help="número da faixa do GM (padrão: 1)"
+    )
+    antigas.add_argument(
+        "--faixa-grupo", type=int, default=None,
+        help="número da faixa dos jogadores (padrão: 2)",
+    )
+    antigas.add_argument(
+        "--nome-gm", default=None, help="como chamar o locutor da faixa do GM (padrão: GM)"
+    )
+    antigas.add_argument(
+        "-n", "--jogadores", default=None,
+        help="quantos locutores há na faixa dos jogadores; 'auto' estima (padrão: 5)",
+    )
+    antigas.add_argument(
+        "--nomes", default=None,
         help="nomes dos jogadores separados por vírgula, na ordem em que falam",
     )
     t.add_argument(
@@ -118,8 +139,13 @@ def _parser() -> argparse.ArgumentParser:
         help="também gera a transcrição traduzida (ex.: en, es)",
     )
     t.add_argument(
-        "--deslocamento", type=float, default=0.0,
-        help="ajuste de sincronia da faixa 2, em segundos",
+        "--deslocamento", action="append", type=_tipo(faixas.ler_deslocamento),
+        dest="deslocamentos", metavar="[N=]SEG", default=[],
+        help=(
+            "ajuste de sincronia em segundos; repita para cada faixa. 'N=SEG' "
+            "ajusta a faixa N (ex.: 2=0.4); um número sozinho ajusta a faixa dos "
+            "jogadores e é do estilo antigo"
+        ),
     )
     t.add_argument(
         "--inicio", type=float, default=0.0,
@@ -133,6 +159,65 @@ def _parser() -> argparse.ArgumentParser:
         help="mantém cada trecho reconhecido como uma linha separada",
     )
     return p
+
+
+def _tipo(leitor):
+    """Adapta um leitor de `faixas` para o argparse, que espera ArgumentTypeError."""
+    def ler(texto: str):
+        try:
+            return leitor(texto)
+        except ValueError as erro:
+            raise argparse.ArgumentTypeError(str(erro)) from None
+    ler.__name__ = leitor.__name__
+    return ler
+
+
+_OPCOES_ANTIGAS = {
+    "faixa_gm": "--faixa-gm", "faixa_grupo": "--faixa-grupo",
+    "nome_gm": "--nome-gm", "jogadores": "--jogadores", "nomes": "--nomes",
+}
+
+
+def _faixas_dos_argumentos(args) -> list[faixas.Faixa]:
+    """Monta as faixas pelo estilo novo (--faixa) ou pelo antigo, nunca pelos dois."""
+    antigas = [opcao for campo, opcao in _OPCOES_ANTIGAS.items()
+               if getattr(args, campo) is not None]
+    sem_faixa = [s for alvo, s in args.deslocamentos if alvo is None]
+    if sem_faixa:
+        antigas.append("--deslocamento SEG")
+
+    if args.faixas:
+        if antigas:
+            raise ValueError(
+                f"{', '.join(antigas)} não combina(m) com --faixa. Use só --faixa "
+                "(e --deslocamento N=SEG para a sincronia), ou só as opções antigas."
+            )
+        escolhidas = list(args.faixas)
+    else:
+        if len(sem_faixa) > 1:
+            raise ValueError("Informe --deslocamento SEG uma vez só, ou use N=SEG.")
+        jogadores = (args.jogadores or "5").strip().lower()
+        escolhidas = faixas.padrao(
+            faixa_gm=(1 if args.faixa_gm is None else args.faixa_gm) - 1,
+            faixa_grupo=(2 if args.faixa_grupo is None else args.faixa_grupo) - 1,
+            nome_gm=args.nome_gm if args.nome_gm is not None else "GM",
+            n_jogadores=None if jogadores == "auto" else int(jogadores),
+            nomes_jogadores=[n for n in (args.nomes or "").split(",")],
+            deslocamento_grupo=sem_faixa[0] if sem_faixa else 0.0,
+        )
+
+    por_numero = {f.numero: f for f in escolhidas}
+    for alvo, segundos in args.deslocamentos:
+        if alvo is None:
+            continue
+        if alvo not in por_numero:
+            raise ValueError(
+                f"--deslocamento {alvo + 1}=...: a faixa {alvo + 1} não está entre "
+                "as escolhidas para transcrever."
+            )
+        por_numero[alvo].deslocamento = segundos
+    faixas.validar(escolhidas)
+    return escolhidas
 
 
 def _cmd_faixas(args) -> int:
@@ -247,24 +332,20 @@ def _cmd_web(args) -> int:
 
 def _cmd_transcrever(args) -> int:
     destino = args.saida or Path("saida") / args.video.stem
-    jogadores = None if args.jogadores.strip().lower() == "auto" else int(args.jogadores)
-    nomes = [n.strip() for n in args.nomes.split(",") if n.strip()]
+    escolhidas = _faixas_dos_argumentos(args)
+    for aviso in faixas.nomes_repetidos(escolhidas):
+        print(f"Aviso: {aviso}")
 
     config = pipeline.Configuracao(
         video=args.video,
         destino=destino,
         modelo_fala=args.modelo,
-        faixa_gm=args.faixa_gm - 1,
-        faixa_grupo=args.faixa_grupo - 1,
-        nome_gm=args.nome_gm,
-        n_jogadores=jogadores,
-        nomes_jogadores=nomes,
+        faixas=escolhidas,
         formatos=[f.strip() for f in args.formatos.split(",") if f.strip()],
         idioma=args.idioma,
         traduzir_para=args.traduzir,
         contexto=args.contexto,
         dispositivo=args.dispositivo,
-        deslocamento_grupo=args.deslocamento,
         inicio=args.inicio,
         fim=args.fim,
         juntar_falas=not args.sem_juntar,

@@ -31,6 +31,11 @@ A faixa 1 não precisa de análise: é sempre a mesma pessoa, então cada fala r
 o rótulo do GM direto. Só a faixa 2 passa pela separação de vozes, que agrupa as
 falas por semelhança de timbre.
 
+Esse é o arranjo padrão, mas não o único: com `--faixa`, cada faixa do arquivo é
+declarada como de uma pessoa ou de várias, em qualquer quantidade — um jogador
+presencial com microfone próprio, um convidado num segundo canal do Discord
+([Mais de duas faixas](#mais-de-duas-faixas)).
+
 O reconhecimento é feito pelo Whisper, que decodifica o áudio em janelas de 30 s
 levando em conta o que já transcreveu. É de onde vêm a pontuação, as maiúsculas e a
 escolha da palavra certa entre duas parecidas — um reconhecedor que olha só o som
@@ -398,11 +403,12 @@ campos do formulário.
 |---|---|---|
 | `-o, --saida` | `saida/<vídeo>` | Caminho base dos arquivos, *sem* extensão. Cada formato vira um arquivo. |
 | `-m, --modelo` | `preciso` | Apelido da [tabela de modelos](#6-modelos-de-fala), um tamanho do Whisper (`medium`), ou o caminho de um modelo baixado à mão. |
-| `--faixa-gm` | `1` | Qual trilha tem o microfone do GM. Contagem a partir de 1. |
-| `--faixa-grupo` | `2` | Qual trilha tem os jogadores. |
-| `--nome-gm` | `GM` | Rótulo de todas as falas da faixa 1. |
-| `-n, --jogadores` | `5` | Quantas vozes existem na faixa 2. Use `auto` para estimar — menos confiável. |
-| `--nomes` | — | Nomes separados por vírgula, na ordem da primeira fala de cada um. |
+| `--faixa` | faixas 1 e 2 | Uma faixa a transcrever, repetida para cada uma: `N=NOME` (uma pessoa) ou `N=varias[:QTD][:NOMES]` (várias). Veja [Mais de duas faixas](#mais-de-duas-faixas). Não combina com as cinco opções abaixo. |
+| `--faixa-gm` | `1` | *Estilo antigo.* Qual trilha tem o microfone do GM. Contagem a partir de 1. |
+| `--faixa-grupo` | `2` | *Estilo antigo.* Qual trilha tem os jogadores. |
+| `--nome-gm` | `GM` | *Estilo antigo.* Rótulo de todas as falas da faixa do GM. |
+| `-n, --jogadores` | `5` | *Estilo antigo.* Quantas vozes existem na faixa dos jogadores. Use `auto` para estimar — menos confiável. |
+| `--nomes` | — | *Estilo antigo.* Nomes separados por vírgula, na ordem da primeira fala de cada um. |
 | `-f, --formatos` | todos | Subconjunto de `txt,csv,json,srt,vtt,md`. |
 | `--idioma` | `pt` | Idioma do áudio; `auto` deixa o modelo detectar. Também é o idioma de origem da tradução. |
 | `--contexto` | — | Nomes, lugares e jargão da mesa, em texto corrido. É o ajuste que mais reduz erro em nome próprio. |
@@ -410,7 +416,7 @@ campos do formulário.
 | `--traduzir` | desligado | Gera também a versão traduzida, ex.: `en`. Única etapa que usa a internet. |
 | `--inicio` | `0` | Segundo em que a transcrição começa. |
 | `--fim` | fim do vídeo | Segundo em que termina. |
-| `--deslocamento` | `0` | Move a faixa 2 no tempo, em segundos, para corrigir dessincronia. |
+| `--deslocamento` | `0` | Move uma faixa no tempo, em segundos, para corrigir dessincronia. `N=SEG` vale para a faixa N, em qualquer estilo, e pode ser repetido; um número sozinho move a faixa dos jogadores e é do estilo antigo. |
 | `--sem-juntar` | desligado | Mantém cada trecho reconhecido numa linha própria, sem agrupar falas seguidas. |
 
 ### Os outros comandos
@@ -511,6 +517,47 @@ Na prática, é mais fácil rodar uma vez sem nomes, abrir o Markdown, ver quem 
 na ordem certa. Se você passar menos nomes que o número de vozes, os que sobrarem
 continuam numerados.
 
+### Mais de duas faixas
+
+Cada `--faixa` declara uma trilha do arquivo e quem fala nela. Só as trilhas
+declaradas são transcritas; as outras ficam de fora.
+
+| Forma | Significado |
+|---|---|
+| `1=GM` | Faixa 1, uma pessoa chamada GM. Tudo depois do `=` é o nome, inclusive vírgulas e dois-pontos. |
+| `3=` | Faixa 3, uma pessoa, com o nome padrão `Faixa 3`. |
+| `2=varias` | Faixa 2, várias pessoas, quantidade estimada pela voz. |
+| `2=varias:5` | Cinco pessoas, numeradas. |
+| `2=varias:5:Ana,Bruno` | Cinco pessoas; as duas primeiras a falar se chamam Ana e Bruno. |
+| `2=varias::Ana,Bruno,Caio` | Sem quantidade: procura tantas vozes quantos nomes. |
+
+Uma mesa com o GM, o Discord dos jogadores e um jogador presencial com microfone
+próprio:
+
+```bash
+.venv/bin/transcritor transcrever gravacao.mkv \
+  --faixa 1=Mestre \
+  --faixa "2=varias:4:Ana,Bruno,Caio,Duda" \
+  --faixa 3=Edu \
+  --deslocamento 3=0.4
+```
+
+Sem nomes, quem está numa faixa de várias pessoas vira `Jogador 1`, `Jogador 2`...
+Com **duas ou mais** faixas de várias pessoas, o padrão leva a faixa junto —
+`Faixa 2 · Pessoa 1`, `Faixa 4 · Pessoa 1` — para que as vozes de faixas
+diferentes não saiam com o mesmo nome.
+
+O mesmo nome em duas faixas é permitido, mas gera um aviso antes de começar: nas
+transcrições, as falas das duas vão parecer da mesma pessoa.
+
+`--faixa` não se mistura com `--faixa-gm`, `--faixa-grupo`, `--nome-gm`, `-n`,
+`--nomes` nem com `--deslocamento` de número sozinho: misturar é erro, para que
+nenhuma opção seja ignorada sem aviso. O arranjo antigo equivale a:
+
+```bash
+--faixa 1=GM --faixa 2=varias:5      # o mesmo que não passar nenhuma das duas
+```
+
 ### Trilhas invertidas
 
 A ordem das trilhas depende de como o OBS foi configurado. Se o
@@ -537,6 +584,8 @@ relação às do GM, desloque a faixa 2. Valores negativos a adiantam:
 ```bash
 .venv/bin/transcritor transcrever gravacao.mp4 --deslocamento 1.5
 ```
+
+Com várias faixas, indique qual: `--deslocamento 2=1.5 --deslocamento 3=-0.2`.
 
 ### Uma linha por trecho
 

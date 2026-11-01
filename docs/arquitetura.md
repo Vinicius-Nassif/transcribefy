@@ -17,7 +17,7 @@ ele.
 Consequência prática: trocar o motor de reconhecimento, o algoritmo de separação de
 vozes ou o conjunto de formatos de saída afeta um módulo só.
 
-**Falas simultâneas nunca são descartadas.** As duas faixas correm em paralelo e
+**Falas simultâneas nunca são descartadas.** As faixas correm em paralelo e
 se sobrepõem o tempo todo. Nenhuma etapa elimina uma fala por coincidir no tempo
 com a de outra pessoa: `mesclagem.mesclar` só funde falas seguidas **do mesmo
 locutor e da mesma faixa**, e `saida` grava o tempo final real de cada uma — uma
@@ -44,7 +44,7 @@ flowchart TD
   MW --> VZ["vozes.py<br/><i>trecho → x-vector</i>"]
   MV --> VZ
   VZ --> DI["diarizacao.py<br/><i>x-vectors → locutor</i>"]
-  DI --> ME["mesclagem.py<br/><i>2 faixas → 1 linha do tempo</i>"]
+  DI --> ME["mesclagem.py<br/><i>N faixas → 1 linha do tempo</i>"]
   ME --> SA["saida.py<br/><i>Fala → arquivos</i>"]
 ```
 
@@ -53,6 +53,7 @@ flowchart TD
 | Módulo | Responsabilidade | Importa |
 |---|---|---|
 | `fala.py` | A estrutura `Fala`, trocada entre todos os módulos | nada |
+| `faixas.py` | Quais faixas transcrever e quem fala em cada uma: leitura da CLI e do JSON da web, validação, nomes padrão e avisos de nome repetido | nada |
 | `ffmpeg_tools.py` | Localiza o ffmpeg, lê as faixas do container, extrai WAV 16 kHz mono | `imageio_ffmpeg` |
 | `modelos.py` | Catálogo, download e cache dos modelos dos dois motores | `requests`, `tqdm`, `faster_whisper` |
 | `motor_whisper.py` | Reconhecimento com Whisper: texto pontuado e ciente do contexto | `fala`, `faster_whisper` |
@@ -64,12 +65,45 @@ flowchart TD
 | `saida.py` | Gera os arquivos, estendendo o `Transcript` do `pytranscript` | `fala`, `mesclagem`, `pytranscript` |
 | `copias.py` | Ciclo de vida da cópia do vídeo enviado pela web: registro, conclusão, falha e limpeza | nada do projeto |
 | `pipeline.py` | Orquestra as etapas e reporta progresso | todos os acima |
-| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `ffmpeg_tools`, `modelos`, `saida`, `copias` |
+| `cli.py` / `web.py` | As duas interfaces | `pipeline`, `faixas`, `ffmpeg_tools`, `modelos`, `saida`, `copias` |
 
 A dependência anda sempre para cima nesta tabela: nenhum módulo importa outro que
 esteja abaixo dele. `fala.py` não importa nada — nem do projeto, nem de fora —, e é
 dele que vem a `Fala` usada por todos os seguintes. Foi separado de `transcricao.py`
 justamente para que os motores pudessem importá-la sem ciclo.
+
+### As N faixas
+
+`Configuracao.faixas` é uma lista de `faixas.Faixa`, uma por trilha escolhida,
+cada uma `UMA` (nome fixo) ou `VARIAS` (separação por voz). O `pipeline` percorre a
+lista: transcreve cada faixa, só extrai vetores de voz e chama a `diarizacao` nas
+de várias pessoas — e só baixa o modelo de locutor se houver alguma —, e entrega
+tudo à `mesclagem`, que já recebia uma lista de grupos e um deslocamento por faixa.
+
+Tudo o que interpreta o que o usuário escreveu mora em `faixas.py`, e a CLI e a
+API chamam as mesmas funções:
+
+| Função | Quem usa |
+|---|---|
+| `ler_especificacao` | `--faixa N=...` da CLI |
+| `ler_deslocamento` | `--deslocamento [N=]SEG` da CLI |
+| `ler_json` | campo `faixas` da API web |
+| `padrao` | o arranjo de duas faixas: Configuracao sem faixas, opções antigas da CLI, campos antigos da API |
+| `validar` | as duas interfaces, antes de começar, e o `pipeline`, contra as faixas do arquivo |
+| `nomes_repetidos` | as duas interfaces: devolve avisos, nunca erros |
+| `prefixo_de` | o `pipeline`, para nomear quem não tem nome |
+
+**Compatibilidade com o arranjo de duas faixas.** `faixas.padrao` reproduz as
+opções antigas exatamente, inclusive `n_jogadores=None` estimando mesmo com
+nomes. Com uma única faixa de várias pessoas, o prefixo continua `Jogador`, e os
+pesos do progresso foram escolhidos para dar as mesmas fatias de antes. O
+`test_pipeline_faixas.py` e o `test_cli.py` travam essa equivalência; numa
+gravação real, a saída da `main` e a deste arranjo são idênticas byte a byte.
+
+A API aceita os campos antigos (`faixa_gm`, `faixa_grupo`, `nome_gm`, `jogadores`,
+`nomes`, `deslocamento`) quando o campo `faixas` não vem. Não é só cortesia: os
+`trabalho.json` de envios que falharam guardaram esses campos, e a nova tentativa
+precisa reconstruir a configuração a partir deles.
 
 ### Os dois motores de reconhecimento
 
@@ -255,6 +289,11 @@ O `pipeline` não conhece nada do algoritmo além dessa chamada.
 um callback `(mensagem, fração)` para progresso. Uma nova interface só precisa
 montar a `Configuracao` e consumir o `Resultado`.
 
+As faixas ela monta com as funções de `faixas.py` — `ler_json`, se receber JSON —,
+e antes de começar chama `faixas.validar` e mostra `faixas.nomes_repetidos`, como a
+CLI e a API fazem. O `pipeline` não devolve esses avisos no `Resultado`: quem
+chama decide quando mostrá-los, de preferência antes de uma transcrição de horas.
+
 ---
 
 ## Testes
@@ -285,6 +324,11 @@ mantém a suíte rápida o bastante para rodar a cada alteração.
 | `test_mesclagem.py` | Intercalação, agrupamento, deslocamento e falas simultâneas |
 | `test_saida.py` | Formatos, tempos das legendas, falas simultâneas e tradução parcial |
 | `test_pipeline.py` | Validações e montagem do contexto antes de transcrever |
+| `test_pipeline_faixas.py` | O pipeline inteiro com N faixas, com reconhecimento falso e diarização real |
+| `test_faixas.py` | Sintaxe da CLI, JSON da web, validação, nomes padrão e avisos |
+| `test_cli.py` | Estilo novo, estilo antigo e a recusa de misturar os dois |
+| `test_web_faixas.py` | O campo `faixas`, os campos antigos e os avisos na API |
+| `test_transcricao.py` | Validação do WAV e escolha do motor |
 | `test_web.py` | Contrato entre a API e o formulário da página |
 | `test_copias.py` | O que a limpeza pode e nunca pode apagar |
 | `test_web_temporario.py` | Cópia do envio: apagada no sucesso, guardada na falha, nova tentativa, limpeza; e a CLI que nunca apaga |

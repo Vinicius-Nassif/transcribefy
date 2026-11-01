@@ -17,6 +17,7 @@ from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import copias, ffmpeg_tools, modelos, pipeline, saida
+from . import faixas as arranjo  # `faixas` é o nome do campo do formulário
 
 RAIZ_TRABALHOS = copias.RAIZ_PADRAO
 PAGINA = Path(__file__).parent / "web_static" / "index.html"
@@ -125,6 +126,7 @@ def _ffmpeg_disponivel() -> str | None:
 async def criar_trabalho(
     video: UploadFile,
     modelo: str = Form(modelos.PADRAO),
+    faixas: str = Form(""),
     faixa_gm: int = Form(1),
     faixa_grupo: int = Form(2),
     nome_gm: str = Form("GM"),
@@ -139,9 +141,15 @@ async def criar_trabalho(
     fim: str = Form(""),
     juntar: bool = Form(True),
 ) -> JSONResponse:
-    """Recebe o vídeo e enfileira a transcrição."""
+    """Recebe o vídeo e enfileira a transcrição.
+
+    As faixas vêm em `faixas`, um JSON no formato de `faixas.ler_json`. Sem ele,
+    valem os campos do arranjo de duas faixas (`faixa_gm`, `faixa_grupo`,
+    `nome_gm`, `jogadores`, `nomes`, `deslocamento`), com o comportamento de
+    antes. A resposta traz em `avisos` os nomes repetidos entre faixas.
+    """
     parametros = {
-        "modelo": modelo, "faixa_gm": faixa_gm, "faixa_grupo": faixa_grupo,
+        "modelo": modelo, "faixas": faixas, "faixa_gm": faixa_gm, "faixa_grupo": faixa_grupo,
         "nome_gm": nome_gm, "jogadores": jogadores, "nomes": nomes,
         "formatos": formatos, "idioma": idioma, "traduzir": traduzir,
         "contexto": contexto, "deslocamento": deslocamento, "inicio": inicio,
@@ -157,63 +165,65 @@ async def criar_trabalho(
         shutil.copyfileobj(video.file, destino, length=4 << 20)
     await video.close()
 
+    # Um envio recusado aqui não é falha de transcrição: tentar de novo com o
+    # mesmo arquivo e os mesmos campos não resolveria, então nada fica guardado.
     try:
-        faixas = ffmpeg_tools.listar_faixas_audio(caminho_video)
-    except (ValueError, ffmpeg_tools.FFmpegIndisponivel) as erro:
-        shutil.rmtree(pasta, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(erro)) from erro
-    if len(faixas) < 2:
-        shutil.rmtree(pasta, ignore_errors=True)
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"O arquivo enviado tem {len(faixas)} faixa(s) de áudio. "
-                "São necessárias 2 faixas separadas (grave no OBS com as "
-                "trilhas 1 e 2 habilitadas em Configurações > Saída > Gravação)."
-            ),
-        )
-
-    try:
+        no_arquivo = ffmpeg_tools.listar_faixas_audio(caminho_video)
         config = _configuracao(parametros, caminho_video, pasta)
-    except ValueError as erro:
+        arranjo.validar(list(config.faixas), len(no_arquivo))
+    except (ValueError, ffmpeg_tools.FFmpegIndisponivel) as erro:
         shutil.rmtree(pasta, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(erro)) from erro
     copias.registrar(pasta, nome, parametros)
 
-    trabalho = Trabalho(id=identificador, nome_video=nome, pasta=pasta)
+    avisos = arranjo.nomes_repetidos(config.faixas)
+    trabalho = Trabalho(id=identificador, nome_video=nome, pasta=pasta, avisos=list(avisos))
     with _trava:
         _trabalhos[identificador] = trabalho
     _executor.submit(_processar, trabalho, config)
 
-    return JSONResponse({"id": identificador, "faixas": [f.rotulo for f in faixas]})
+    return JSONResponse({
+        "id": identificador,
+        "faixas": [f.rotulo for f in no_arquivo],
+        "avisos": avisos,
+    })
 
 
 def _configuracao(parametros: dict, video: Path, pasta: Path) -> pipeline.Configuracao:
     """Monta a configuração a partir dos campos do formulário.
 
     É a mesma função no envio e na nova tentativa, que relê os parâmetros
-    gravados no registro da cópia: as duas não têm como divergir.
+    gravados no registro da cópia: as duas não têm como divergir. Registros
+    gravados antes do campo `faixas` caem no arranjo de duas faixas.
     """
     p = parametros
-    jogadores = str(p["jogadores"]).strip()
     fim = str(p["fim"]).strip()
     return pipeline.Configuracao(
         video=video,
         destino=pasta / Path(video.name).stem,
         modelo_fala=p["modelo"],
-        faixa_gm=int(p["faixa_gm"]) - 1,
-        faixa_grupo=int(p["faixa_grupo"]) - 1,
-        nome_gm=p["nome_gm"].strip() or "GM",
-        n_jogadores=None if jogadores.lower() == "auto" else int(jogadores),
-        nomes_jogadores=[n.strip() for n in p["nomes"].split(",") if n.strip()],
+        faixas=_faixas_do_formulario(p),
         formatos=[f.strip() for f in p["formatos"].split(",") if f.strip()],
         idioma=p["idioma"],
         traduzir_para=p["traduzir"].strip() or None,
         contexto=p["contexto"],
-        deslocamento_grupo=float(p["deslocamento"]),
         inicio=float(p["inicio"]),
         fim=float(fim) if fim else None,
         juntar_falas=bool(p["juntar"]),
+    )
+
+
+def _faixas_do_formulario(p: dict) -> list[arranjo.Faixa]:
+    if str(p.get("faixas") or "").strip():
+        return arranjo.ler_json(p["faixas"])
+    jogadores = str(p["jogadores"]).strip()
+    return arranjo.padrao(
+        faixa_gm=int(p["faixa_gm"]) - 1,
+        faixa_grupo=int(p["faixa_grupo"]) - 1,
+        nome_gm=p["nome_gm"],
+        n_jogadores=None if jogadores.lower() == "auto" else int(jogadores),
+        nomes_jogadores=p["nomes"].split(","),
+        deslocamento_grupo=float(p["deslocamento"]),
     )
 
 
@@ -245,7 +255,10 @@ def tentar_novamente(identificador: str) -> JSONResponse:
             )
         config = _configuracao(registro.parametros, video, pasta)
         copias.marcar(pasta, copias.AGUARDANDO)
-        trabalho = Trabalho(id=identificador, nome_video=registro.video, pasta=pasta)
+        trabalho = Trabalho(
+            id=identificador, nome_video=registro.video, pasta=pasta,
+            avisos=arranjo.nomes_repetidos(config.faixas),
+        )
         _trabalhos[identificador] = trabalho
     _executor.submit(_processar, trabalho, config)
     return JSONResponse({"id": identificador})
@@ -283,7 +296,7 @@ def _processar(trabalho: Trabalho, config: pipeline.Configuracao) -> None:
     trabalho.arquivos = [a.name for a in resultado.arquivos]
     trabalho.locutores = resultado.locutores
     trabalho.total_falas = len(resultado.falas)
-    trabalho.avisos = resultado.avisos
+    trabalho.avisos = trabalho.avisos + resultado.avisos
     trabalho.duracao = resultado.duracao
     trabalho.previa = [
         {

@@ -121,3 +121,15 @@ def test_uma_interrupcao_corta_o_paragrafo_em_vez_de_sumir_dentro_dele():
         ("Ana", "eu checo armadilhas"),
         ("GM", "ela está entreaberta"),
     ]
+
+
+def test_n_faixas_numa_linha_do_tempo_sem_perder_falas_simultaneas():
+    """Três faixas falando ao mesmo tempo: nenhuma fala some, todas marcadas."""
+    gm = [fala(0, 5, "a porta range", 0, "GM")]
+    grupo = [fala(1, 3, "eu abro", 1, "Ana"), fala(2, 4, "não abre", 1, "Bruno")]
+    terceira = [fala(2.5, 4.5, "eu corro", 2, "Caio")]
+    resultado = mesclar(gm, grupo, terceira, deslocamentos={2: 0.5})
+
+    assert [f.locutor for f in resultado] == ["GM", "Ana", "Bruno", "Caio"]
+    assert resultado[-1].inicio == 3.0  # deslocamento só da faixa 3
+    assert all(sobrepostas(resultado))

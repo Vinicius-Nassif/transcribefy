@@ -129,8 +129,9 @@ def test_tentar_novamente_usa_os_mesmos_parametros_do_envio(ambiente, monkeypatc
     )
     cliente.post(f"/api/trabalhos/{identificador}/tentar-novamente")
     (config,) = recebidas
-    assert list(config.nomes_jogadores) == ["Ana", "Bruno"]
-    assert config.n_jogadores == 2
+    grupo = config.faixas[1]
+    assert list(grupo.nomes) == ["Ana", "Bruno"]
+    assert grupo.n_locutores == 2
 
 
 def test_falha_de_novo_mantem_a_copia_para_outra_tentativa(ambiente):
